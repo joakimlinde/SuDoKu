@@ -79,6 +79,33 @@ void init()
 
 
 static inline
+int is_board_solved(struct sudoku_board *board)
+{
+  return ((board->undetermined_count == 0) || (board->solutions_count > 0));
+}
+
+
+static inline
+int is_board_dead(struct sudoku_board *board)
+{
+  return board->dead;
+}
+
+
+static
+void set_board_dead(struct sudoku_cell *cell)
+{
+  struct sudoku_board *board;
+
+  board = cell->board_ref;
+  if (board->debug_level)
+    printf("Board is declared dead!\n");
+
+  board->dead = 1;
+}
+
+
+static inline
 unsigned int get_cell_available_set(struct sudoku_cell *cell)
 {
   unsigned int taken_set, available_set;
@@ -146,33 +173,6 @@ void set_cell_number(struct sudoku_cell *cell, unsigned int number)
   *cell->row_taken_set_ref |= NUMBER_TO_SET(number);
   *cell->col_taken_set_ref |= NUMBER_TO_SET(number);
   *cell->tile_taken_set_ref |= NUMBER_TO_SET(number);
-}
-
-
-static inline
-int is_board_solved(struct sudoku_board *board)
-{
-  return ((board->undetermined_count == 0) || (board->solutions_count > 0));
-}
-
-
-static inline
-int is_board_dead(struct sudoku_board *board)
-{
-  return board->dead;
-}
-
-
-static
-void set_board_dead(struct sudoku_cell *cell)
-{
-  struct sudoku_board *board;
-
-  board = cell->board_ref;
-  if (board->debug_level)
-    printf("Board is declared dead!\n");
-
-  board->dead = 1;
 }
 
 
@@ -913,11 +913,13 @@ int solve_eliminate(struct sudoku_board *board)
     round++;
 
     changed = solve_eliminate_tiles(board);
-    changed += solve_eliminate_rows(board);
-    changed += solve_eliminate_cols(board);
+    if (!is_board_dead(board))
+      changed += solve_eliminate_rows(board);
+    if (!is_board_dead(board))
+      changed += solve_eliminate_cols(board);
 
     total_changed += changed;
-  } while (changed > 0);
+  } while ((changed > 0) && (!is_board_dead(board)));
 
   return total_changed;
 }
@@ -1012,7 +1014,7 @@ int solve(struct sudoku_board *board)
     if (board->undetermined_count)
       changed += solve_eliminate(board);
 
-  } while ((board->undetermined_count) && (changed > 0));
+  } while ((board->undetermined_count) && (changed > 0) && !is_board_dead(board));
 
   if (!is_board_dead(board) && !is_board_solved(board))
      solve_hidden(board);
