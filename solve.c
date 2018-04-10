@@ -104,6 +104,52 @@ unsigned int get_cell_available_number(struct sudoku_cell *cell)
 
 
 static inline
+void setup_availability_count_cache(struct sudoku_board *board)
+{
+  int row, col;
+  struct sudoku_cell *cell;
+
+  // Setup availability_count for each cell
+  for (row=0; row<9; row++) {
+    for (col=0; col<9; col++) {
+      cell = &board->cells[row][col];
+      if (cell->number == 0)
+        cell->available_count = bit_count[get_cell_available_set(cell)];
+    }
+  }
+}
+
+
+static inline
+unsigned int get_cached_cell_available_count(struct sudoku_cell *cell)
+{
+  return cell->available_count;
+}
+
+
+static inline
+struct sudoku_cell* find_cell_with_lowest_availability_count(struct sudoku_board *board)
+{
+  int row, col, lowest_available_count;
+  struct sudoku_cell *cell, *lowest_cell;
+  
+  lowest_available_count = 10;
+  lowest_cell = NULL;
+  for (row=0; row<9; row++) {
+    for (col=0; col<9; col++) {
+      cell = &board->cells[row][col];
+      if ((cell->number == 0) && (bit_count[get_cell_available_set(cell)] < lowest_available_count)) {
+        lowest_available_count = cell->available_count;
+        lowest_cell = cell;
+      }
+    }
+  }
+
+  return lowest_cell;
+}
+
+
+static inline
 void set_cell_number(struct sudoku_cell *cell, unsigned int number)
 {
   if (cell->number == 0)
@@ -962,8 +1008,8 @@ void solve_hidden_cell(struct sudoku_cell *cell)
 
 
 static inline
-void solve_hidden_top_level_helper(struct sudoku_board *board, unsigned int max_nest_level, unsigned int max_hidden_level,
-                                   const char *comment)
+void solve_hidden_top_level_partial_search(struct sudoku_board *board, unsigned int max_nest_level, 
+                                           unsigned int max_hidden_level, const char *comment)
 {
   int row, col, bits;
   struct sudoku_cell *cell;
@@ -974,17 +1020,18 @@ void solve_hidden_top_level_helper(struct sudoku_board *board, unsigned int max_
   if (board->debug_level)
     printf("%s\n", comment);
   board->max_nest_level = max_nest_level;
-  board->hidden_level = (max_hidden_level ? max_hidden_level : 9);
+  board->hidden_level = max_hidden_level;
   for (bits=2; bits<=board->hidden_level; bits++) {
     if (board->debug_level)
       printf("Trying cells with %i solutions available...\n", bits);
     for (row=0; row<9; row++) {
       for (col=0; col<9; col++) {
         cell = &board->cells[row][col];
-        if ((cell->number == 0) && (cell->available_count == bits))
+        if ((cell->number == 0) && (get_cached_cell_available_count(cell) == bits)) {
           solve_hidden_cell(cell);
-        if (is_board_solved(board))
-          return;
+          if (is_board_solved(board))
+            return;
+        }
       }
     }
   }
@@ -992,27 +1039,36 @@ void solve_hidden_top_level_helper(struct sudoku_board *board, unsigned int max_
 
 
 static inline
+void solve_hidden_top_level_full_search(struct sudoku_board *board, const char *comment)
+{
+  struct sudoku_cell *cell;
+
+  if (is_board_solved(board))
+    return;
+
+  if (board->debug_level)
+    printf("%s\n", comment);
+  board->max_nest_level = 9*9;
+  board->hidden_level = 0;
+
+  cell = find_cell_with_lowest_availability_count(board);
+  if (cell)
+    solve_hidden_cell(cell);
+}
+
+
+static inline
 void solve_hidden_top_level(struct sudoku_board *board)
 {
-  int row, col;
-  struct sudoku_cell *cell;
   struct sudoku_board *tmp;
 
   // Setup availability_count for each cell
-  for (row=0; row<9; row++) {
-    for (col=0; col<9; col++) {
-      cell = &board->cells[row][col];
-      if (cell->number == 0)
-        cell->available_count = bit_count[get_cell_available_set(cell)];
-    }
-  }
-
+  setup_availability_count_cache(board);
+ 
   // Try deeper and deeper searches until we find it
-  solve_hidden_top_level_helper(board,   1, 9, "Trying with one level search first...");
-  solve_hidden_top_level_helper(board,   3, 3, "Trying with a shallow search...");
-  solve_hidden_top_level_helper(board,   3, 9, "Trying with a slightly deeper search...");
-  solve_hidden_top_level_helper(board,   4, 9, "Trying a deeper search...");
-  solve_hidden_top_level_helper(board, 9*9, 9, "Trying the full search...");
+  solve_hidden_top_level_partial_search(board, 1, 9, "Trying with one level search first...");
+  solve_hidden_top_level_partial_search(board, 3, 3, "Trying with a shallow search...");
+  solve_hidden_top_level_full_search(board, "Trying the full search...");
 
   // Fix the special case with one-and-only-one solution found
   if (board->solutions_count == 1) {
@@ -1035,26 +1091,28 @@ void solve_hidden_deep_level(struct sudoku_board *board)
   int row, col, bits, bits_max;
   struct sudoku_cell *cell;
 
-  // Setup availablility_count
-  for (row=0; row<9; row++) {
-    for (col=0; col<9; col++) {
-      cell = &board->cells[row][col];
-      if (cell->number == 0)
-        cell->available_count = bit_count[get_cell_available_set(cell)];
-        // TODO: check for dead cells here
-    }
-  }
-
-  // We are looking at cells with available_count up to a certain level
-  bits_max = (board->hidden_level ? board->hidden_level : 9);
-  for (bits=2; bits<=bits_max; bits++) {
-    for (row=0; row<9; row++) {
-      for (col=0; col<9; col++) {
-        cell = &board->cells[row][col];
-        if ((cell->number == 0) && (cell->available_count == bits))
-          solve_hidden_cell(cell);
+  if (board->hidden_level) {
+    // Setup availablility_count
+    setup_availability_count_cache(board);
+ 
+    // We are looking at cells with available_count up to a certain level
+    bits_max = board->hidden_level;
+    for (bits=2; bits<=bits_max; bits++) {
+      for (row=0; row<9; row++) {
+        for (col=0; col<9; col++) {
+          cell = &board->cells[row][col];
+          if ((cell->number == 0) && (get_cached_cell_available_count(cell) == bits)) { 
+            solve_hidden_cell(cell);
+            if (is_board_solved(board))
+              return;
+          }
+        }
       }
     }
+  } else {
+    cell = find_cell_with_lowest_availability_count(board);
+    if (cell)
+      solve_hidden_cell(cell);
   }
 }
 

@@ -4,3 +4,4 @@ sudoku
 *.tex
 logs
 sudokus
+.vscode
