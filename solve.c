@@ -104,33 +104,10 @@ unsigned int get_cell_available_number(struct sudoku_cell *cell)
 
 
 static inline
-void setup_availability_count_cache(struct sudoku_board *board)
-{
-  int row, col;
-  struct sudoku_cell *cell;
-
-  // Setup availability_count for each cell
-  for (row=0; row<9; row++) {
-    for (col=0; col<9; col++) {
-      cell = &board->cells[row][col];
-      if (cell->number == 0)
-        cell->available_count = bit_count[get_cell_available_set(cell)];
-    }
-  }
-}
-
-
-static inline
-unsigned int get_cached_cell_available_count(struct sudoku_cell *cell)
-{
-  return cell->available_count;
-}
-
-
-static inline
 struct sudoku_cell* find_cell_with_lowest_availability_count(struct sudoku_board *board)
 {
-  int row, col, lowest_available_count;
+  int row, col;
+  unsigned int cell_bit_count, lowest_available_count;
   struct sudoku_cell *cell, *lowest_cell;
   
   lowest_available_count = 10;
@@ -138,9 +115,15 @@ struct sudoku_cell* find_cell_with_lowest_availability_count(struct sudoku_board
   for (row=0; row<9; row++) {
     for (col=0; col<9; col++) {
       cell = &board->cells[row][col];
-      if ((cell->number == 0) && (bit_count[get_cell_available_set(cell)] < lowest_available_count)) {
-        lowest_available_count = cell->available_count;
-        lowest_cell = cell;
+      if (cell->number == 0) {
+        cell_bit_count = bit_count[get_cell_available_set(cell)];
+        if (cell_bit_count == 0) {
+          board->dead = 1;
+          return NULL;
+        } else if (cell_bit_count < lowest_available_count) {
+          lowest_available_count = cell_bit_count;
+          lowest_cell = cell;
+        }
       }
     }
   }
@@ -190,29 +173,6 @@ void set_board_dead(struct sudoku_cell *cell)
     printf("Board is declared dead!\n");
 
   board->dead = 1;
-}
-
-
-static inline
-int check_board_health(struct sudoku_board *board)
-{
-  int row, col;
-  struct sudoku_cell *cell;
-
-  if (is_board_dead(board))
-    return 0;
-
-  for (row=0; row<9; row++) {
-    for (col=0; col<9; col++) {
-      cell = &board->cells[row][col];
-      if ((cell->number == 0) && (get_cell_available_set(cell) == 0)) {
-        set_board_dead(cell);
-        return 0;
-      }
-    }
-  }
-
-  return 1;
 }
 
 
@@ -963,6 +923,7 @@ int solve_eliminate(struct sudoku_board *board)
 }
 
 
+static inline
 void solve_hidden_cell(struct sudoku_cell *cell)
 {
   unsigned int number, available_set;
@@ -1007,141 +968,33 @@ void solve_hidden_cell(struct sudoku_cell *cell)
 }
 
 
-static inline
-void solve_hidden_top_level_partial_search(struct sudoku_board *board, unsigned int max_nest_level, 
-                                           unsigned int max_hidden_level, const char *comment)
-{
-  int row, col, bits;
-  struct sudoku_cell *cell;
-
-  if (is_board_solved(board))
-    return;
-
-  if (board->debug_level)
-    printf("%s\n", comment);
-  board->max_nest_level = max_nest_level;
-  board->hidden_level = max_hidden_level;
-  for (bits=2; bits<=board->hidden_level; bits++) {
-    if (board->debug_level)
-      printf("Trying cells with %i solutions available...\n", bits);
-    for (row=0; row<9; row++) {
-      for (col=0; col<9; col++) {
-        cell = &board->cells[row][col];
-        if ((cell->number == 0) && (get_cached_cell_available_count(cell) == bits)) {
-          solve_hidden_cell(cell);
-          if (is_board_solved(board))
-            return;
-        }
-      }
-    }
-  }
-}
-
-
-static inline
-void solve_hidden_top_level_full_search(struct sudoku_board *board, const char *comment)
-{
-  struct sudoku_cell *cell;
-
-  if (is_board_solved(board))
-    return;
-
-  if (board->debug_level)
-    printf("%s\n", comment);
-  board->max_nest_level = 9*9;
-  board->hidden_level = 0;
-
-  cell = find_cell_with_lowest_availability_count(board);
-  if (cell)
-    solve_hidden_cell(cell);
-}
-
-
-static inline
-void solve_hidden_top_level(struct sudoku_board *board)
-{
-  struct sudoku_board *tmp;
-
-  // Setup availability_count for each cell
-  setup_availability_count_cache(board);
- 
-  // Try deeper and deeper searches until we find it
-  solve_hidden_top_level_partial_search(board, 1, 9, "Trying with one level search first...");
-  solve_hidden_top_level_partial_search(board, 3, 3, "Trying with a shallow search...");
-  solve_hidden_top_level_full_search(board, "Trying the full search...");
-
-  // Fix the special case with one-and-only-one solution found
-  if (board->solutions_count == 1) {
-    tmp = board->solutions_list;
-    assert(tmp->next == NULL);
-    tmp->next = NULL;
-    board->solutions_list = NULL;
-    board->solutions_count = 0;
-    tmp->nest_level = board->nest_level;
-    tmp->hidden_level = board->hidden_level;
-    copy_board(tmp, board);
-    destroy_board(&tmp);
-  }
-}
-
-
-static inline
-void solve_hidden_deep_level(struct sudoku_board *board)
-{
-  int row, col, bits, bits_max;
-  struct sudoku_cell *cell;
-
-  if (board->hidden_level) {
-    // Setup availablility_count
-    setup_availability_count_cache(board);
- 
-    // We are looking at cells with available_count up to a certain level
-    bits_max = board->hidden_level;
-    for (bits=2; bits<=bits_max; bits++) {
-      for (row=0; row<9; row++) {
-        for (col=0; col<9; col++) {
-          cell = &board->cells[row][col];
-          if ((cell->number == 0) && (get_cached_cell_available_count(cell) == bits)) { 
-            solve_hidden_cell(cell);
-            if (is_board_solved(board))
-              return;
-          }
-        }
-      }
-    }
-  } else {
-    cell = find_cell_with_lowest_availability_count(board);
-    if (cell)
-      solve_hidden_cell(cell);
-  }
-}
-
-
 void solve_hidden(struct sudoku_board *board)
 {
+  struct sudoku_cell *cell;
+  struct sudoku_board *tmp;
+
   if (board->debug_level) {
     printf("Solve hidden\n");
     print_board(board);
     print_possible(board);
   }
 
-  // NOTE: Recursion *is* hard. Now you know...
-
-  // Are we allowed to go to the next best level?
-  if ((board->max_nest_level) && (board->nest_level >= board->max_nest_level))
-    return;
-
   // Is the board good to go to another nest level?
-  if (!check_board_health(board))
-    return;
+  cell = find_cell_with_lowest_availability_count(board);
+  if (cell) {
+    solve_hidden_cell(cell);
 
-  // Are we at the top or deep in the recursion?
-  if (board->nest_level == 0) {
-    // We are at the top level - control
-    solve_hidden_top_level(board);
-  } else {
-    // We are deep in the recursion
-    solve_hidden_deep_level(board);
+    // Fix the special case with one-and-only-one solution found
+    if ((board->nest_level == 0) && (board->solutions_count == 1)) {
+      tmp = board->solutions_list;
+      assert(tmp->next == NULL);
+      tmp->next = NULL;
+      board->solutions_list = NULL;
+      board->solutions_count = 0;
+      tmp->nest_level = board->nest_level;
+      copy_board(tmp, board);
+      destroy_board(&tmp);
+    }
   }
 }
 
@@ -1161,7 +1014,7 @@ int solve(struct sudoku_board *board)
 
   } while ((board->undetermined_count) && (changed > 0));
 
-  if (board->undetermined_count) // TODO: check for dead cells here
+  if (!is_board_dead(board) && !is_board_solved(board))
      solve_hidden(board);
 
   solutions_count = board->solutions_count;

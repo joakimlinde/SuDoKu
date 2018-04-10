@@ -42,7 +42,6 @@ struct sudoku_cell {
   unsigned int tile;
   unsigned int number;
   unsigned int reserved_for_number_set;
-  unsigned int available_count;
   unsigned int *row_taken_set_ref;
   unsigned int *col_taken_set_ref;
   unsigned int *tile_taken_set_ref;
@@ -60,8 +59,6 @@ struct sudoku_board {
   struct sudoku_board *solutions_list;
   struct sudoku_board *next;
   unsigned int nest_level;
-  unsigned int max_nest_level;
-  unsigned int hidden_level;
   unsigned int debug_level;
 };
 
