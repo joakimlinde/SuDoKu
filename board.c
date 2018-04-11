@@ -56,7 +56,6 @@ void init_board(struct sudoku_board *board)
       cell->tile =rowcol_to_tile[row][col];
       cell->number = 0;
       cell->reserved_for_number_set = 0;
-      cell->available_count = 0;
       cell->row_taken_set_ref = &board->row_taken_set[row];
       cell->col_taken_set_ref = &board->col_taken_set[col];
       cell->tile_taken_set_ref = &board->tile_taken_set[rowcol_to_tile[row][col]];
@@ -77,8 +76,6 @@ void init_board(struct sudoku_board *board)
   board->solutions_list = NULL;
   board->next = NULL;
   board->nest_level = 0;
-  board->max_nest_level = 0;
-  board->hidden_level = 0;
   board->debug_level = 0;
 }
 
@@ -103,7 +100,6 @@ void init_board_from_orig(struct sudoku_board *board, struct sudoku_board *orig_
       cell->tile =rowcol_to_tile[row][col];
       cell->number = orig_cell->number;
       cell->reserved_for_number_set = orig_cell->reserved_for_number_set;
-      cell->available_count = orig_cell->available_count;
       cell->row_taken_set_ref = &board->row_taken_set[row];
       cell->col_taken_set_ref = &board->col_taken_set[col];
       cell->tile_taken_set_ref = &board->tile_taken_set[rowcol_to_tile[row][col]];
@@ -124,8 +120,6 @@ void init_board_from_orig(struct sudoku_board *board, struct sudoku_board *orig_
   board->solutions_list = NULL;
   board->next = NULL;
   board->nest_level = orig_board->nest_level;
-  board->max_nest_level = orig_board->max_nest_level;
-  board->hidden_level = orig_board->hidden_level;
   board->debug_level = orig_board->debug_level;
 }
 
@@ -142,7 +136,6 @@ void copy_board(struct sudoku_board *src, struct sudoku_board *dest)
       
       dest_cell->number = src_cell->number;
       dest_cell->reserved_for_number_set = src_cell->reserved_for_number_set;
-      dest_cell->available_count = src_cell->available_count;
     }
   }
 
@@ -155,8 +148,6 @@ void copy_board(struct sudoku_board *src, struct sudoku_board *dest)
   dest->undetermined_count = src->undetermined_count;
   dest->dead = src->dead;
   dest->nest_level = src->nest_level;
-  dest->max_nest_level = src->max_nest_level;
-  dest->hidden_level = src->hidden_level;
   dest->debug_level = src->debug_level;
 }
 

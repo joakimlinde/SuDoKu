@@ -79,48 +79,6 @@ void init()
 
 
 static inline
-unsigned int get_cell_available_set(struct sudoku_cell *cell)
-{
-  unsigned int taken_set, available_set;
-
-  taken_set = *cell->row_taken_set_ref;
-  taken_set |= *cell->col_taken_set_ref;
-  taken_set |= *cell->tile_taken_set_ref;
-
-  available_set = TAKEN_TO_AVAIL_SET(taken_set);
-
-  if (available_set && cell->reserved_for_number_set)
-     available_set &= cell->reserved_for_number_set;
-
-  return available_set;
-}
-
-
-static inline
-unsigned int get_cell_available_number(struct sudoku_cell *cell)
-{
-  return available_set_to_number[get_cell_available_set(cell)];
-}
-
-
-static inline
-void set_cell_number(struct sudoku_cell *cell, unsigned int number)
-{
-  if (cell->number == 0)
-    cell->board_ref->undetermined_count--;
-
-  assert(cell->number == 0);
-
-  cell->number = number;
-  cell->reserved_for_number_set = 0;
-
-  *cell->row_taken_set_ref |= NUMBER_TO_SET(number);
-  *cell->col_taken_set_ref |= NUMBER_TO_SET(number);
-  *cell->tile_taken_set_ref |= NUMBER_TO_SET(number);
-}
-
-
-static inline
 int is_board_solved(struct sudoku_board *board)
 {
   return ((board->undetermined_count == 0) || (board->solutions_count > 0));
@@ -148,25 +106,73 @@ void set_board_dead(struct sudoku_cell *cell)
 
 
 static inline
-int check_board_health(struct sudoku_board *board)
+unsigned int get_cell_available_set(struct sudoku_cell *cell)
+{
+  unsigned int taken_set, available_set;
+
+  taken_set = *cell->row_taken_set_ref;
+  taken_set |= *cell->col_taken_set_ref;
+  taken_set |= *cell->tile_taken_set_ref;
+
+  available_set = TAKEN_TO_AVAIL_SET(taken_set);
+
+  if (available_set && cell->reserved_for_number_set)
+     available_set &= cell->reserved_for_number_set;
+
+  return available_set;
+}
+
+
+static inline
+unsigned int get_cell_available_number(struct sudoku_cell *cell)
+{
+  return available_set_to_number[get_cell_available_set(cell)];
+}
+
+
+static inline
+struct sudoku_cell* find_cell_with_lowest_availability_count(struct sudoku_board *board)
 {
   int row, col;
-  struct sudoku_cell *cell;
-
-  if (is_board_dead(board))
-    return 0;
-
+  unsigned int cell_bit_count, lowest_available_count;
+  struct sudoku_cell *cell, *lowest_cell;
+  
+  lowest_available_count = 10;
+  lowest_cell = NULL;
   for (row=0; row<9; row++) {
     for (col=0; col<9; col++) {
       cell = &board->cells[row][col];
-      if ((cell->number == 0) && (get_cell_available_set(cell) == 0)) {
-        set_board_dead(cell);
-        return 0;
+      if (cell->number == 0) {
+        cell_bit_count = bit_count[get_cell_available_set(cell)];
+        if (cell_bit_count == 0) {
+          board->dead = 1;
+          return NULL;
+        } else if (cell_bit_count < lowest_available_count) {
+          lowest_available_count = cell_bit_count;
+          lowest_cell = cell;
+        }
       }
     }
   }
 
-  return 1;
+  return lowest_cell;
+}
+
+
+static inline
+void set_cell_number(struct sudoku_cell *cell, unsigned int number)
+{
+  if (cell->number == 0)
+    cell->board_ref->undetermined_count--;
+
+  assert(cell->number == 0);
+
+  cell->number = number;
+  cell->reserved_for_number_set = 0;
+
+  *cell->row_taken_set_ref |= NUMBER_TO_SET(number);
+  *cell->col_taken_set_ref |= NUMBER_TO_SET(number);
+  *cell->tile_taken_set_ref |= NUMBER_TO_SET(number);
 }
 
 
@@ -907,16 +913,19 @@ int solve_eliminate(struct sudoku_board *board)
     round++;
 
     changed = solve_eliminate_tiles(board);
-    changed += solve_eliminate_rows(board);
-    changed += solve_eliminate_cols(board);
+    if (!is_board_dead(board))
+      changed += solve_eliminate_rows(board);
+    if (!is_board_dead(board))
+      changed += solve_eliminate_cols(board);
 
     total_changed += changed;
-  } while (changed > 0);
+  } while ((changed > 0) && (!is_board_dead(board)));
 
   return total_changed;
 }
 
 
+static inline
 void solve_hidden_cell(struct sudoku_cell *cell)
 {
   unsigned int number, available_set;
@@ -961,129 +970,33 @@ void solve_hidden_cell(struct sudoku_cell *cell)
 }
 
 
-static inline
-void solve_hidden_top_level_helper(struct sudoku_board *board, unsigned int max_nest_level, unsigned int max_hidden_level,
-                                   const char *comment)
+void solve_hidden(struct sudoku_board *board)
 {
-  int row, col, bits;
-  struct sudoku_cell *cell;
-
-  if (is_board_solved(board))
-    return;
-
-  if (board->debug_level)
-    printf("%s\n", comment);
-  board->max_nest_level = max_nest_level;
-  board->hidden_level = (max_hidden_level ? max_hidden_level : 9);
-  for (bits=2; bits<=board->hidden_level; bits++) {
-    if (board->debug_level)
-      printf("Trying cells with %i solutions available...\n", bits);
-    for (row=0; row<9; row++) {
-      for (col=0; col<9; col++) {
-        cell = &board->cells[row][col];
-        if ((cell->number == 0) && (cell->available_count == bits))
-          solve_hidden_cell(cell);
-        if (is_board_solved(board))
-          return;
-      }
-    }
-  }
-}
-
-
-static inline
-void solve_hidden_top_level(struct sudoku_board *board)
-{
-  int row, col;
   struct sudoku_cell *cell;
   struct sudoku_board *tmp;
 
-  // Setup availability_count for each cell
-  for (row=0; row<9; row++) {
-    for (col=0; col<9; col++) {
-      cell = &board->cells[row][col];
-      if (cell->number == 0)
-        cell->available_count = bit_count[get_cell_available_set(cell)];
-    }
-  }
-
-  // Try deeper and deeper searches until we find it
-  solve_hidden_top_level_helper(board,   1, 9, "Trying with one level search first...");
-  solve_hidden_top_level_helper(board,   3, 3, "Trying with a shallow search...");
-  solve_hidden_top_level_helper(board,   3, 9, "Trying with a slightly deeper search...");
-  solve_hidden_top_level_helper(board,   4, 9, "Trying a deeper search...");
-  solve_hidden_top_level_helper(board, 9*9, 9, "Trying the full search...");
-
-  // Fix the special case with one-and-only-one solution found
-  if (board->solutions_count == 1) {
-    tmp = board->solutions_list;
-    assert(tmp->next == NULL);
-    tmp->next = NULL;
-    board->solutions_list = NULL;
-    board->solutions_count = 0;
-    tmp->nest_level = board->nest_level;
-    tmp->hidden_level = board->hidden_level;
-    copy_board(tmp, board);
-    destroy_board(&tmp);
-  }
-}
-
-
-static inline
-void solve_hidden_deep_level(struct sudoku_board *board)
-{
-  int row, col, bits, bits_max;
-  struct sudoku_cell *cell;
-
-  // Setup availablility_count
-  for (row=0; row<9; row++) {
-    for (col=0; col<9; col++) {
-      cell = &board->cells[row][col];
-      if (cell->number == 0)
-        cell->available_count = bit_count[get_cell_available_set(cell)];
-        // TODO: check for dead cells here
-    }
-  }
-
-  // We are looking at cells with available_count up to a certain level
-  bits_max = (board->hidden_level ? board->hidden_level : 9);
-  for (bits=2; bits<=bits_max; bits++) {
-    for (row=0; row<9; row++) {
-      for (col=0; col<9; col++) {
-        cell = &board->cells[row][col];
-        if ((cell->number == 0) && (cell->available_count == bits))
-          solve_hidden_cell(cell);
-      }
-    }
-  }
-}
-
-
-void solve_hidden(struct sudoku_board *board)
-{
   if (board->debug_level) {
     printf("Solve hidden\n");
     print_board(board);
     print_possible(board);
   }
 
-  // NOTE: Recursion *is* hard. Now you know...
-
-  // Are we allowed to go to the next best level?
-  if ((board->max_nest_level) && (board->nest_level >= board->max_nest_level))
-    return;
-
   // Is the board good to go to another nest level?
-  if (!check_board_health(board))
-    return;
+  cell = find_cell_with_lowest_availability_count(board);
+  if (cell) {
+    solve_hidden_cell(cell);
 
-  // Are we at the top or deep in the recursion?
-  if (board->nest_level == 0) {
-    // We are at the top level - control
-    solve_hidden_top_level(board);
-  } else {
-    // We are deep in the recursion
-    solve_hidden_deep_level(board);
+    // Fix the special case with one-and-only-one solution found
+    if ((board->nest_level == 0) && (board->solutions_count == 1)) {
+      tmp = board->solutions_list;
+      assert(tmp->next == NULL);
+      tmp->next = NULL;
+      board->solutions_list = NULL;
+      board->solutions_count = 0;
+      tmp->nest_level = board->nest_level;
+      copy_board(tmp, board);
+      destroy_board(&tmp);
+    }
   }
 }
 
@@ -1101,9 +1014,9 @@ int solve(struct sudoku_board *board)
     if (board->undetermined_count)
       changed += solve_eliminate(board);
 
-  } while ((board->undetermined_count) && (changed > 0));
+  } while ((board->undetermined_count) && (changed > 0) && !is_board_dead(board));
 
-  if (board->undetermined_count) // TODO: check for dead cells here
+  if (!is_board_dead(board) && !is_board_solved(board))
      solve_hidden(board);
 
   solutions_count = board->solutions_count;
