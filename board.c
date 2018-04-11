@@ -322,11 +322,13 @@ void print_board_line(FILE *f, struct sudoku_board *board)
 void print_board_latex(struct sudoku_board *board)
 {
   int row, col;
+  char ch;
 
   for (row=0; row<9; row++) {    
     printf("\\setrow ");
     for (col=0; col<9; col++) {
-      printf("{%c}", ('0' + board->cells[row][col].number));
+      ch = ('0' + board->cells[row][col].number);
+      printf("{%c}", ((ch == '0') ? ' ' : ch));
       if ((col == 2) || (col == 5))
           printf("  ");
     }
