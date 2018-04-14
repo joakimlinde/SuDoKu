@@ -28,6 +28,7 @@
 
 #define SET_MASK (0x3FE)
 #define NUMBER_TO_SET(number) (1 << (number)) 
+#define INDEX_TO_SET(number) (1 << (number)) 
 #define TAKEN_TO_AVAIL_SET(taken) ((~(taken)) & SET_MASK)
 
 
