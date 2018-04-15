@@ -191,6 +191,8 @@ int run_batch_from_file(struct options *options)
       if (options->verbose_level) {
         printf("-------- Input --------\n");
         print_board(board);
+        if (options->print_latex) 
+          print_board_latex(board);
         printf("--- Solve---\n");
       }
 
@@ -209,6 +211,8 @@ int run_batch_from_file(struct options *options)
       if (options->verbose_level) {
         printf("-------- Output -------\n");
         print_solutions(board);
+        if (options->print_latex) 
+          print_board_latex(board);
         printf("\n=====================\n\n");
       }
   
