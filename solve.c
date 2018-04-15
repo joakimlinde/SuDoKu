@@ -1425,18 +1425,12 @@ void solve_hidden(struct sudoku_board *board)
 
 int solve(struct sudoku_board *board)
 {
-  int changed, round, solutions_count;
+  int changed, solutions_count;
 
-  round = 0;
+  changed = solve_possible(board);
 
-  do {
-    round++;
-
-    changed = solve_possible(board);
-    if (board->undetermined_count)
-      changed += solve_eliminate(board);
-
-  } while ((board->undetermined_count) && (changed > 0) && !is_board_dead(board));
+  if (!is_board_solved(board))
+    changed += solve_eliminate(board);
 
   if (!is_board_dead(board) && !is_board_solved(board))
      solve_hidden(board);
