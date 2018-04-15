@@ -1473,37 +1473,45 @@ void print_possible(struct sudoku_board *board)
 {
   int row, col, i;
   struct sudoku_cell *cell;
-  unsigned int taken_set, available_set, reserved_set;
+  unsigned int possible_set, taken_set, available_set, reserved_set;
 
   for (row=0; row<9; row++) {
     for (col=0; col<9; col++) {
       cell = &board->cells[row][col];
 
       if (cell->number == 0) {
+
+        printf("[%i,%i] Possible: ", row, col);
+        possible_set = get_cell_available_set(cell) >> 1;
+        for (i=0; i<9; i++) {
+          if (possible_set & 1)
+            printf("%i ", i+1);
+          possible_set >>= 1;
+        }
+
         taken_set = *cell->row_taken_set_ref;
         taken_set |= *cell->col_taken_set_ref;
         taken_set |= *cell->tile_taken_set_ref;
 
         available_set = TAKEN_TO_AVAIL_SET(taken_set) >> 1;
 
-        printf("[%i,%i] Available: ", row, col);
+        printf("   (available:");
         for (i=0; i<9; i++) {
           if (available_set & 1)
-            printf("%i ", i+1);
+            printf(" %i", i+1);
           available_set >>= 1;
         }
 
         reserved_set = cell->reserved_for_number_set >> 1;
         if (reserved_set) {
-          printf(" { ");
+          printf("  reserved:");
           for (i=0; i<9; i++) {
             if (reserved_set & 1)
-              printf("%i ", i+1);
+              printf(" %i", i+1);
             reserved_set >>= 1;
           }
-          printf("}");
         }
-        printf("\n");
+        printf(")\n");
       }
     }
   }
