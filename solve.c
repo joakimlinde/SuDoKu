@@ -211,6 +211,13 @@ void handle_bad_reserve_cell(struct sudoku_cell *cell, unsigned int number_set)
 }
 
 
+typedef int (*reserve_func_t)(struct sudoku_cell *possible_cell, 
+                              unsigned int number_set);
+typedef int (*reserve_with_index_set_func_t)(struct sudoku_cell *possible_cell, 
+                                             unsigned int possible_index_set, 
+                                             unsigned int number_set);
+
+
 static inline
 int reserve_cell(struct sudoku_cell *cell, unsigned int number_set)
 {
@@ -249,7 +256,6 @@ int reserve_cell(struct sudoku_cell *cell, unsigned int number_set)
 
   return changed;
 }
-
 
 static inline
 int reserve_row_in_tile(struct sudoku_cell *possible_cell, unsigned int number_set)
@@ -1055,12 +1061,70 @@ int solve_eliminate_cols(struct sudoku_board *board)
 }
 
 
+static inline
+int find_and_reserve_group_with_index(struct sudoku_cell *cell, 
+                                      unsigned int prior_possible_number_set[9], int this_index, 
+                                      unsigned int possible_number_set, 
+                                      reserve_with_index_set_func_t reserve_with_index_set_func,
+                                      char *parent_func_name)
+{
+  int i, j, changed, possibilities, same_number_set_count;
+  unsigned int possible_index_set, joint_number_set;
+
+  changed = 0;
+  possibilities = bit_count[possible_number_set];
+
+  same_number_set_count = 0;
+  possible_index_set = INDEX_TO_SET(this_index);
+  for (i=0; i<this_index; i++) {
+    if (prior_possible_number_set[i] == possible_number_set) {
+      same_number_set_count++;
+      possible_index_set |= INDEX_TO_SET(i);
+    }
+  }
+
+  // Do we have other cells with the same possibilies
+  if ((same_number_set_count+1) == possibilities) {
+    if (reserve_with_index_set_func(cell, possible_index_set, possible_number_set))
+      changed++;
+  }
+
+  if (possibilities <= 3) {
+    // Now look at partial matches so we can catch {12}, {23}, {13} or {12}, {23}, {123}
+    for (i=0; i<this_index; i++) {
+      // Is there any overlap with a previos set
+      if (prior_possible_number_set[i] & possible_number_set) {
+        // We have overlap - does this overlap takes us to 3
+        joint_number_set = prior_possible_number_set[i] | possible_number_set;
+        if (bit_count[joint_number_set] == 3) {
+          // Look for a third that is within this set
+          for (j=(i+1); j<this_index; j++) {
+            if (prior_possible_number_set[j] && ((joint_number_set | prior_possible_number_set[j]) == joint_number_set)) {
+              // Now we have the three indexes (i, j, row) that go into possible_index_set
+              possible_index_set = INDEX_TO_SET(i) | INDEX_TO_SET(j) | INDEX_TO_SET(this_index);
+              if (cell->board_ref->debug_level >= 3)
+                printf("%s: Reserving cells in row %i with possibilities: %i index_set: %i  number_set: %i\n",
+                        parent_func_name, cell->row, possibilities, possible_index_set, joint_number_set);
+              if (reserve_with_index_set_func(cell, possible_index_set, joint_number_set))
+                changed++;
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return changed;
+}
+
+
 static
 int solve_eliminate_tiles_2(struct sudoku_board *board)
 {
-  int tile, index, i, j, changed, possibilities, same_number_set_count;
+  int tile, index, changed, possibilities;
   struct sudoku_cell *cell;
-  unsigned int possible_number_set, possible_index_set, joint_number_set;
+  unsigned int possible_number_set;
   unsigned int prior_possible_number_set[9];
 
   changed = 0;
@@ -1081,7 +1145,7 @@ int solve_eliminate_tiles_2(struct sudoku_board *board)
         possibilities = bit_count[possible_number_set];
 
         // Do we have any possibilities
-        if (!possibilities) {
+        if (possibilities == 0) {
           // Board is dead
           set_board_dead(board);
           return 0;
@@ -1089,49 +1153,14 @@ int solve_eliminate_tiles_2(struct sudoku_board *board)
           // We have one and only one possible - set it!
           set_cell_number_and_log(cell, available_set_to_number[possible_number_set]);
           changed++;
-        } else if (possibilities > 1) {
+        } else {
           // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
           prior_possible_number_set[index] = possible_number_set;
-          same_number_set_count = 0;
-          possible_index_set = INDEX_TO_SET(index);
-          for (i=0; i<index; i++) {
-            if (prior_possible_number_set[i] == possible_number_set) {
-              same_number_set_count++;
-              possible_index_set |= INDEX_TO_SET(i);
-            }
-          }
 
-          // Do we have other cells with the same possibilies
-          if ((same_number_set_count+1) == possibilities) {
-            if (reserve_cells_with_index_in_tile(cell, possible_index_set, possible_number_set))
-              changed++;
-          }
-
-          if (possibilities <= 3) {
-            // Now look at partial matches so we can catch {12}, {23}, {13} or {12}, {23}, {123}
-            for (i=0; i<index; i++) {
-              // Is there any overlap with a previos set
-              if (prior_possible_number_set[i] & possible_number_set) {
-                // We have overlap - does this overlap takes us to 3
-                joint_number_set = prior_possible_number_set[i] | possible_number_set;
-                if (bit_count[joint_number_set] == 3) {
-                  // Look for a third that is within this set
-                  for (j=(i+1); j<index; j++) {
-                    if (prior_possible_number_set[j] && ((joint_number_set | prior_possible_number_set[j]) == joint_number_set)) {
-                      // Now we have the three indexes (i, j, index) that go into possible_index_set
-                      possible_index_set = INDEX_TO_SET(i) | INDEX_TO_SET(j) | INDEX_TO_SET(index);
-                      if (board->debug_level >= 3)
-                        printf("solve_eliminate_tiles_2: Reserving cells in row %i with possibilities: %i index_set: %i  number_set: %i\n",
-                               cell->row, possibilities, possible_index_set, joint_number_set);
-                      if (reserve_cells_with_index_in_tile(cell, possible_index_set, joint_number_set))
-                        changed++;
-                      break;
-                    }
-                  }
-                }
-              }
-            }
-          }
+          changed += find_and_reserve_group_with_index(cell, prior_possible_number_set, 
+                                                       index, possible_number_set, 
+                                                       &reserve_cells_with_index_in_tile,
+                                                       "solve_eliminate_tiles_2");
         }
       }
     }
@@ -1144,9 +1173,9 @@ int solve_eliminate_tiles_2(struct sudoku_board *board)
 static
 int solve_eliminate_rows_2(struct sudoku_board *board)
 {
-  int row, col, i, j, changed, possibilities, same_number_set_count;
+  int row, col, changed, possibilities;
   struct sudoku_cell *cell;
-  unsigned int possible_number_set, possible_index_set, joint_number_set;
+  unsigned int possible_number_set;
   unsigned int prior_possible_number_set[9];
 
   changed = 0;
@@ -1178,47 +1207,11 @@ int solve_eliminate_rows_2(struct sudoku_board *board)
         } else if (possibilities > 1) {
           // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
           prior_possible_number_set[col] = possible_number_set;
-          same_number_set_count = 0;
-          possible_index_set = INDEX_TO_SET(col);
-          for (i=0; i<col; i++) {
-            if (prior_possible_number_set[i] == possible_number_set) {
-              same_number_set_count++;
-              possible_index_set |= INDEX_TO_SET(i);
-            }
-          }
 
-          // Do we have other cells with the same possibilies
-          if ((same_number_set_count+1) == possibilities) {
-            if (reserve_cells_with_index_in_row(cell, possible_index_set, possible_number_set))
-              changed++;
-
-          }
-          
-          if (possibilities <= 3) {
-            // Now look at partial matches so we can catch {12}, {23}, {13} or {12}, {23}, {123}
-            for (i=0; i<col; i++) {
-              // Is there any overlap with a previos set
-              if (prior_possible_number_set[i] & possible_number_set) {
-                // We have overlap - does this overlap takes us to 3
-                joint_number_set = prior_possible_number_set[i] | possible_number_set;
-                if (bit_count[joint_number_set] == 3) {
-                  // Look for a third that is within this set
-                  for (j=(i+1); j<col; j++) {
-                    if (prior_possible_number_set[j] && ((joint_number_set | prior_possible_number_set[j]) == joint_number_set)) {
-                      // Now we have the three indexes (i, j, row) that go into possible_index_set
-                      possible_index_set = INDEX_TO_SET(i) | INDEX_TO_SET(j) | INDEX_TO_SET(col);
-                      if (board->debug_level >= 3)
-                        printf("solve_eliminate_rows_2: Reserving cells in row %i with possibilities: %i index_set: %i  number_set: %i\n",
-                               cell->row, possibilities, possible_index_set, joint_number_set);
-                      if (reserve_cells_with_index_in_row(cell, possible_index_set, joint_number_set))
-                        changed++;
-                      break;
-                    }
-                  }
-                }
-              }
-            }
-          }
+          changed += find_and_reserve_group_with_index(cell, prior_possible_number_set, 
+                                                       col, possible_number_set, 
+                                                       &reserve_cells_with_index_in_row,
+                                                       "solve_eliminate_rows_2");
         }
       }
     }
@@ -1231,9 +1224,9 @@ int solve_eliminate_rows_2(struct sudoku_board *board)
 static
 int solve_eliminate_cols_2(struct sudoku_board *board)
 {
-  int row, col, i, j, changed, possibilities, same_number_set_count;
+  int row, col, changed, possibilities;
   struct sudoku_cell *cell;
-  unsigned int possible_number_set, possible_index_set, joint_number_set;
+  unsigned int possible_number_set;
   unsigned int prior_possible_number_set[9];
 
   changed = 0;
@@ -1265,46 +1258,11 @@ int solve_eliminate_cols_2(struct sudoku_board *board)
         } else if (possibilities > 1) {
           // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
           prior_possible_number_set[row] = possible_number_set;
-          same_number_set_count = 0;
-          possible_index_set = INDEX_TO_SET(row);
-          for (i=0; i<row; i++) {
-            if (prior_possible_number_set[i] == possible_number_set) {
-              same_number_set_count++;
-              possible_index_set |= INDEX_TO_SET(i);
-            }
-          }
 
-          // Do we have other cells with the same possibilies
-          if ((same_number_set_count+1) == possibilities) {
-            if (reserve_cells_with_index_in_col(cell, possible_index_set, possible_number_set))
-              changed++;
-          }
-
-          if (possibilities <= 3) {
-            // Now look at partial matches so we can catch {12}, {23}, {13} or {12}, {23}, {123}
-            for (i=0; i<row; i++) {
-              // Is there any overlap with a previos set
-              if (prior_possible_number_set[i] & possible_number_set) {
-                // We have overlap - does this overlap takes us to 3
-                joint_number_set = prior_possible_number_set[i] | possible_number_set;
-                if (bit_count[joint_number_set] == 3) {
-                  // Look for a third that is within this set
-                  for (j=(i+1); j<row; j++) {
-                    if (prior_possible_number_set[j] && ((joint_number_set | prior_possible_number_set[j]) == joint_number_set)) {
-                      // Now we have the three indexes (i, j, row) that go into possible_index_set
-                      possible_index_set = INDEX_TO_SET(i) | INDEX_TO_SET(j) | INDEX_TO_SET(row);
-                      if (board->debug_level >= 3)
-                        printf("solve_eliminate_cols_2: Reserving cells in row %i with possibilities: %i index_set: %i  number_set: %i\n",
-                               cell->row, possibilities, possible_index_set, joint_number_set);
-                      if (reserve_cells_with_index_in_col(cell, possible_index_set, joint_number_set))
-                        changed++;
-                      break;
-                    }
-                  }
-                }
-              }
-            }
-          }
+          changed += find_and_reserve_group_with_index(cell, prior_possible_number_set, 
+                                                       row, possible_number_set, 
+                                                       &reserve_cells_with_index_in_col,
+                                                       "solve_eliminate_cols_2");
         }
       }
     }
