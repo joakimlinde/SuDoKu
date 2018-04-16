@@ -45,7 +45,7 @@ static const unsigned int index_col_mask[] = {
 
 static void print_number_set(unsigned int number_set, const char *postfix);
 
-static void print_reserved_set_for_cell(struct sudoku_cell *cell, const char *comment);
+static void print_reserved_set_for_cell(struct sudoku_cell *cell);
 
 static void print_possible(struct sudoku_board *board);
 
@@ -86,19 +86,19 @@ int is_board_solved(struct sudoku_board *board)
 
 
 static inline
-int is_board_dead(struct sudoku_board *board)
-{
-  return board->dead;
-}
-
-
-static inline
 void set_board_dead(struct sudoku_board *board)
 {
   if (board->debug_level)
     printf("Board is declared dead!\n");
 
   board->dead = 1;
+}
+
+
+static inline
+int is_board_done(struct sudoku_board *board)
+{
+  return (board->dead || (board->undetermined_count == 0) || (board->solutions_count > 0));
 }
 
 
@@ -292,7 +292,7 @@ int reserve_row_in_tile(struct sudoku_cell *possible_cell, unsigned int number_s
           if (reserve_cell(cell, reserve_number_set)) {
             changed++;
             if (board->debug_level >= 1)
-              print_reserved_set_for_cell(cell, "row in tile");
+              print_reserved_set_for_cell(cell);
           }
         }
       }
@@ -338,7 +338,7 @@ int reserve_col_in_tile(struct sudoku_cell *possible_cell, unsigned int number_s
           if (reserve_cell(cell, reserve_number_set)) {
             changed++;
             if (board->debug_level >= 1)
-              print_reserved_set_for_cell(cell, "col in tile");
+              print_reserved_set_for_cell(cell);
           }
         }
       }
@@ -383,7 +383,7 @@ int reserve_tile_in_row(struct sudoku_cell *possible_cell, unsigned int number_s
         if (reserve_cell(cell, reserve_number_set)) {
           changed++;
           if (board->debug_level >= 1)
-            print_reserved_set_for_cell(cell, "tile in row");
+            print_reserved_set_for_cell(cell);
         }
       }
     }
@@ -427,7 +427,7 @@ int reserve_tile_in_col(struct sudoku_cell *possible_cell, unsigned int number_s
         if (reserve_cell(cell, reserve_number_set)) {
           changed++;
           if (board->debug_level >= 1)
-            print_reserved_set_for_cell(cell, "tile in row");
+            print_reserved_set_for_cell(cell);
         }
       }
     }
@@ -465,7 +465,7 @@ int reserve_cells_with_index_in_tile(struct sudoku_cell *possible_cell, unsigned
         if (reserve_cell(cell, reserve_number_set)) {
           changed++;
           if (board->debug_level >= 1)
-            print_reserved_set_for_cell(cell, "index in tile");
+            print_reserved_set_for_cell(cell);
         }
       }
     }
@@ -526,7 +526,7 @@ int reserve_cells_with_index_in_row(struct sudoku_cell *possible_cell, unsigned 
         if (reserve_cell(cell, reserve_number_set)) {
           changed++;
           if (board->debug_level >= 1)
-            print_reserved_set_for_cell(cell, "index in row");
+            print_reserved_set_for_cell(cell);
         }
       }
     }
@@ -578,7 +578,7 @@ int reserve_cells_with_index_in_col(struct sudoku_cell *possible_cell, unsigned 
         if (reserve_cell(cell, reserve_number_set)) {
           changed++;
           if (board->debug_level >= 1)
-            print_reserved_set_for_cell(cell, "index in col");
+            print_reserved_set_for_cell(cell);
         }
       }
     }
@@ -603,7 +603,7 @@ int solve_possible(struct sudoku_board *board)
   struct sudoku_cell *cell;
   unsigned int number;
 
-  if (board->debug_level)
+  if (board->debug_level >= 2)
     printf("Solve possible\n");
 
   changed_total = 0;
@@ -640,6 +640,9 @@ int solve_eliminate_tiles(struct sudoku_board *board)
   struct sudoku_cell *cell, *possible_cell;
   unsigned int number, number_set, reserve_number_set, this_reserve_number_set, possible_index_set, index_set;
   unsigned int prior_possible_index_set[9];
+
+  if (board->debug_level >= 2)
+    printf("Solve eliminate tiles\n");
 
   changed = 0;
   for (tile=0; tile<9; tile++) {
@@ -681,7 +684,7 @@ int solve_eliminate_tiles(struct sudoku_board *board)
         }
 
         // Do we have any possibilities
-        if (!possibilities) {
+        if (possibilities == 0) {
           // Board is dead
           set_board_dead(board);
           return 0;
@@ -689,7 +692,7 @@ int solve_eliminate_tiles(struct sudoku_board *board)
           // We have one and only one possible - set it!
           set_cell_number_and_log(possible_cell, number);
           changed++;
-        } else if (possibilities > 1) {
+        } else {
           // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
           prior_possible_index_set[number-1] = possible_index_set;
           same_index_set_count = 0;
@@ -719,7 +722,7 @@ int solve_eliminate_tiles(struct sudoku_board *board)
                 if (reserve_cell(board->tile_ref[tile][index], reserve_number_set)) {
                   changed++;
                   if (board->debug_level >= 1)
-                    print_reserved_set_for_cell(board->tile_ref[tile][index], "complete match by tile");
+                    print_reserved_set_for_cell(board->tile_ref[tile][index]);
                 }
               }
             }
@@ -752,7 +755,7 @@ int solve_eliminate_tiles(struct sudoku_board *board)
                           if (reserve_cell(board->tile_ref[tile][index], this_reserve_number_set)) {
                             changed++;
                             if (board->debug_level >= 1)
-                              print_reserved_set_for_cell(board->tile_ref[tile][index], "partial match by tile");
+                              print_reserved_set_for_cell(board->tile_ref[tile][index]);
                           }
                         }
                       }
@@ -797,6 +800,9 @@ int solve_eliminate_rows(struct sudoku_board *board)
   unsigned int number, number_set, reserve_number_set, this_reserve_number_set, possible_index_set, index_set;
   unsigned int prior_possible_index_set[9];
 
+  if (board->debug_level >= 2)
+    printf("Solve eliminate rows\n");
+
   changed = 0;
   for (row=0; row<9; row++) {
     if (board->debug_level >= 2)
@@ -830,7 +836,7 @@ int solve_eliminate_rows(struct sudoku_board *board)
         }
 
         // Do we have any possibilities
-        if (!possibilities) {
+        if (possibilities == 0) {
           // Board is dead
           set_board_dead(board);
           return 0;
@@ -838,7 +844,7 @@ int solve_eliminate_rows(struct sudoku_board *board)
           // We have one and only one possible - set it!
           set_cell_number_and_log(possible_cell, number);
           changed++;
-        } else if (possibilities > 1) {
+        } else {
           // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
           prior_possible_index_set[number-1] = possible_index_set;
           same_index_set_count = 0;
@@ -867,7 +873,7 @@ int solve_eliminate_rows(struct sudoku_board *board)
                 if (reserve_cell(&board->cells[row][col], reserve_number_set)) {
                   changed++;
                   if (board->debug_level >= 1)
-                    print_reserved_set_for_cell(&board->cells[row][col], "complete match by row");
+                    print_reserved_set_for_cell(&board->cells[row][col]);
                 }
               }
             }
@@ -899,7 +905,7 @@ int solve_eliminate_rows(struct sudoku_board *board)
                           if (reserve_cell(&board->cells[row][col], this_reserve_number_set)) {
                             changed++;
                             if (board->debug_level >= 1)
-                              print_reserved_set_for_cell(&board->cells[row][col], "partial match by row");
+                              print_reserved_set_for_cell(&board->cells[row][col]);
                           }
                         }
                       }
@@ -932,6 +938,9 @@ int solve_eliminate_cols(struct sudoku_board *board)
   struct sudoku_cell *cell, *possible_cell;
   unsigned int number, number_set, reserve_number_set, this_reserve_number_set, possible_index_set, index_set;
   unsigned int prior_possible_index_set[9];
+
+  if (board->debug_level >= 2)
+    printf("Solve eliminate cols\n");
 
   changed = 0;
   for (col=0; col<9; col++) {
@@ -966,7 +975,7 @@ int solve_eliminate_cols(struct sudoku_board *board)
         }
 
         // Do we have any possibilities
-        if (!possibilities) {
+        if (possibilities == 0) {
           // Board is dead
           set_board_dead(board);
           return 0;
@@ -974,7 +983,7 @@ int solve_eliminate_cols(struct sudoku_board *board)
           // We have one and only one possible - set it!
           set_cell_number_and_log(possible_cell, number);
           changed++;
-        } else if (possibilities > 1) {
+        } else {
           // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
           prior_possible_index_set[number-1] = possible_index_set;
           same_index_set_count = 0;
@@ -1003,7 +1012,7 @@ int solve_eliminate_cols(struct sudoku_board *board)
                 if (reserve_cell(&board->cells[row][col], reserve_number_set)) {
                   changed++;
                   if (board->debug_level >= 1)
-                    print_reserved_set_for_cell(&board->cells[row][col], "complete match by col");
+                    print_reserved_set_for_cell(&board->cells[row][col]);
                 }
               }
             }
@@ -1035,7 +1044,7 @@ int solve_eliminate_cols(struct sudoku_board *board)
                           if (reserve_cell(&board->cells[row][col], this_reserve_number_set)) {
                             changed++;
                             if (board->debug_level >= 1)
-                              print_reserved_set_for_cell(&board->cells[row][col], "partial match col");
+                              print_reserved_set_for_cell(&board->cells[row][col]);
                           }
                         }
                       }
@@ -1127,6 +1136,9 @@ int solve_eliminate_tiles_2(struct sudoku_board *board)
   unsigned int possible_number_set;
   unsigned int prior_possible_number_set[9];
 
+  if (board->debug_level >= 2)
+    printf("Solve eliminate tiles 2\n");
+
   changed = 0;
   for (tile=0; tile<9; tile++) {
     if (board->debug_level >= 2) {
@@ -1178,6 +1190,9 @@ int solve_eliminate_rows_2(struct sudoku_board *board)
   unsigned int possible_number_set;
   unsigned int prior_possible_number_set[9];
 
+  if (board->debug_level >= 2)
+    printf("Solve eliminate rows 2\n");
+
   changed = 0;
   for (row=0; row<9; row++) {
     if (board->debug_level >= 2) {
@@ -1196,7 +1211,7 @@ int solve_eliminate_rows_2(struct sudoku_board *board)
         possibilities = bit_count[possible_number_set];
 
         // Do we have any possibilities
-        if (!possibilities) {
+        if (possibilities == 0) {
           // Board is dead
           set_board_dead(board);
           return 0;
@@ -1204,7 +1219,7 @@ int solve_eliminate_rows_2(struct sudoku_board *board)
           // We have one and only one possible - set it!
           set_cell_number_and_log(cell, available_set_to_number[possible_number_set]);
           changed++;
-        } else if (possibilities > 1) {
+        } else {
           // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
           prior_possible_number_set[col] = possible_number_set;
 
@@ -1229,6 +1244,9 @@ int solve_eliminate_cols_2(struct sudoku_board *board)
   unsigned int possible_number_set;
   unsigned int prior_possible_number_set[9];
 
+  if (board->debug_level >= 2)
+    printf("Solve eliminate cols 2\n");
+
   changed = 0;
   for (col=0; col<9; col++) {
     if (board->debug_level >= 2) {
@@ -1247,7 +1265,7 @@ int solve_eliminate_cols_2(struct sudoku_board *board)
         possibilities = bit_count[possible_number_set];
 
         // Do we have any possibilities
-        if (!possibilities) {
+        if (possibilities == 0) {
           // Board is dead
           set_board_dead(board);
           return 0;
@@ -1255,7 +1273,7 @@ int solve_eliminate_cols_2(struct sudoku_board *board)
           // We have one and only one possible - set it!
           set_cell_number_and_log(cell, available_set_to_number[possible_number_set]);
           changed++;
-        } else if (possibilities > 1) {
+        } else {
           // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
           prior_possible_number_set[row] = possible_number_set;
 
@@ -1274,10 +1292,11 @@ int solve_eliminate_cols_2(struct sudoku_board *board)
 
 int solve_eliminate(struct sudoku_board *board)
 {
-  int changed, total_changed, round;
+  int this_changed, changed, total_changed, round;
 
-  if (board->debug_level)
+  if (board->debug_level >= 2)
     printf("Solve eliminate\n");
+
   total_changed = 0;
   round = 0;
 
@@ -1285,21 +1304,58 @@ int solve_eliminate(struct sudoku_board *board)
     if (board->debug_level >= 2)
       printf("  Round %i:\n", round);
     round++;
+    changed = 0;
 
-    changed = solve_eliminate_tiles(board);
-    if (!is_board_dead(board))
-      changed += solve_eliminate_rows(board);
-    if (!is_board_dead(board))
-      changed += solve_eliminate_cols(board);
-    if (!is_board_dead(board))
-      changed += solve_eliminate_rows_2(board);
-    if (!is_board_dead(board))
-      changed += solve_eliminate_cols_2(board);
-    if (!is_board_dead(board))
-      changed += solve_eliminate_tiles_2(board);
+    this_changed = solve_eliminate_tiles(board);
+    if (is_board_done(board))
+      break;
+    if (this_changed)
+       changed += this_changed + solve_possible(board);
+    if (is_board_done(board))
+      break;
+
+    this_changed = solve_eliminate_rows(board);
+    if (is_board_done(board))
+      break;
+    if (this_changed)
+       changed += this_changed + solve_possible(board);
+    if (is_board_done(board))
+      break;
+
+    this_changed =  solve_eliminate_cols(board);
+    if (is_board_done(board))
+      break;
+    if (this_changed)
+       changed += this_changed + solve_possible(board);
+    if (is_board_done(board))
+      break;
+
+    this_changed =  solve_eliminate_rows_2(board);
+    if (is_board_done(board))
+      break;
+    if (this_changed)
+       changed += this_changed + solve_possible(board);
+    if (is_board_done(board))
+      break;
+
+    this_changed =  solve_eliminate_cols_2(board);
+    if (is_board_done(board))
+      break;
+    if (this_changed)
+       changed += this_changed + solve_possible(board);
+    if (is_board_done(board))
+      break;
+
+    this_changed =  solve_eliminate_tiles_2(board);
+    if (is_board_done(board))
+      break;
+    if (this_changed)
+       changed += this_changed + solve_possible(board);
+    if (is_board_done(board))
+      break;
 
     total_changed += changed;
-  } while ((changed > 0) && (!is_board_dead(board)));
+  } while ((changed > 0) && (is_board_done(board)));
 
   return total_changed;
 }
@@ -1387,10 +1443,10 @@ int solve(struct sudoku_board *board)
 
   changed = solve_possible(board);
 
-  if (!is_board_solved(board))
+  if (!is_board_done(board))
     changed += solve_eliminate(board);
 
-  if (!is_board_dead(board) && !is_board_solved(board))
+  if (!is_board_done(board))
      solve_hidden(board);
 
   solutions_count = board->solutions_count;
@@ -1418,11 +1474,11 @@ void print_number_set(unsigned int number_set, const char *postfix)
 }
 
 static
-void print_reserved_set_for_cell(struct sudoku_cell *cell, const char *comment)
+void print_reserved_set_for_cell(struct sudoku_cell *cell)
 {
   printf("    [%i,%i]  =  ", cell->row, cell->col);
-  print_number_set(cell->reserved_for_number_set, comment);
-  printf("\n");
+  print_number_set(cell->reserved_for_number_set, "\n");
+
 }
 
 
