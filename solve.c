@@ -634,7 +634,7 @@ int solve_possible(struct sudoku_board *board)
 
 
 static
-int solve_eliminate_tiles(struct sudoku_board *board)
+int solve_eliminate_tiles_1(struct sudoku_board *board)
 {
   int tile, index, i, j, changed, possibilities, same_index_set_count;
   struct sudoku_cell *cell, *possible_cell;
@@ -793,7 +793,7 @@ int solve_eliminate_tiles(struct sudoku_board *board)
 
 
 static
-int solve_eliminate_rows(struct sudoku_board *board)
+int solve_eliminate_rows_1(struct sudoku_board *board)
 {
   int row, col, i, j, changed, possibilities, same_index_set_count;
   struct sudoku_cell *cell, *possible_cell;
@@ -932,7 +932,7 @@ int solve_eliminate_rows(struct sudoku_board *board)
 
 
 static
-int solve_eliminate_cols(struct sudoku_board *board)
+int solve_eliminate_cols_1(struct sudoku_board *board)
 {
   int row, col, i, j, changed, possibilities, same_index_set_count;
   struct sudoku_cell *cell, *possible_cell;
@@ -1306,7 +1306,7 @@ int solve_eliminate(struct sudoku_board *board)
     round++;
     changed = 0;
 
-    this_changed = solve_eliminate_tiles(board);
+    this_changed = solve_eliminate_tiles_1(board);
     if (is_board_done(board))
       break;
     if (this_changed)
@@ -1314,7 +1314,7 @@ int solve_eliminate(struct sudoku_board *board)
     if (is_board_done(board))
       break;
 
-    this_changed = solve_eliminate_rows(board);
+    this_changed = solve_eliminate_rows_1(board);
     if (is_board_done(board))
       break;
     if (this_changed)
@@ -1322,7 +1322,7 @@ int solve_eliminate(struct sudoku_board *board)
     if (is_board_done(board))
       break;
 
-    this_changed =  solve_eliminate_cols(board);
+    this_changed =  solve_eliminate_cols_1(board);
     if (is_board_done(board))
       break;
     if (this_changed)
@@ -1355,7 +1355,7 @@ int solve_eliminate(struct sudoku_board *board)
       break;
 
     total_changed += changed;
-  } while ((changed > 0) && (is_board_done(board)));
+  } while ((changed > 0) && (!is_board_done(board)));
 
   return total_changed;
 }
