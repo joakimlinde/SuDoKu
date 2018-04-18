@@ -258,6 +258,26 @@ int reserve_cell(struct sudoku_cell *cell, unsigned int number_set)
 }
 
 static inline
+int reserve_cell_and_log(struct sudoku_cell *cell, unsigned int number_set, const char *func_name)
+{
+  struct sudoku_board *board;
+  int changed;
+
+  board = cell->board_ref;
+
+  if ((board->debug_level >= 2) && (func_name)) {    
+    printf("%s: [%i,%i] = ", func_name, cell->row, cell->col);
+    print_number_set(number_set, "\n");
+  }
+
+  changed = reserve_cell(cell, number_set);
+  if (changed && (board->debug_level >= 1))
+    print_reserved_set_for_cell(cell);  
+
+  return changed;
+}
+
+static inline
 int reserve_row_in_tile(struct sudoku_cell *possible_cell, unsigned int number_set)
 {
   int row, col, my_row, my_tile, changed;
@@ -285,15 +305,7 @@ int reserve_row_in_tile(struct sudoku_cell *possible_cell, unsigned int number_s
           }
 
           // Make the reservation
-          if (board->debug_level >= 2) {
-            printf("reserve_row_in_tile: [%i,%i] = ", cell->row, cell->col);
-            print_number_set(reserve_number_set, "\n");
-          }
-          if (reserve_cell(cell, reserve_number_set)) {
-            changed++;
-            if (board->debug_level >= 1)
-              print_reserved_set_for_cell(cell);
-          }
+          changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_row_in_tile");
         }
       }
     }
@@ -331,15 +343,7 @@ int reserve_col_in_tile(struct sudoku_cell *possible_cell, unsigned int number_s
           }
 
           // Make the reservation
-          if (board->debug_level >= 2) {
-            printf("reserve_col_in_tile: [%i,%i] = ", cell->row, cell->col);
-            print_number_set(reserve_number_set, "\n");
-          }
-          if (reserve_cell(cell, reserve_number_set)) {
-            changed++;
-            if (board->debug_level >= 1)
-              print_reserved_set_for_cell(cell);
-          }
+          changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_col_in_tile");
         }
       }
     }
@@ -376,15 +380,7 @@ int reserve_tile_in_row(struct sudoku_cell *possible_cell, unsigned int number_s
         }
 
         // Make the reservation
-        if (board->debug_level >= 2) {
-          printf("reserve_tile_in_row: [%i,%i] = ", cell->row, cell->col);
-          print_number_set(reserve_number_set, "\n");
-        }
-        if (reserve_cell(cell, reserve_number_set)) {
-          changed++;
-          if (board->debug_level >= 1)
-            print_reserved_set_for_cell(cell);
-        }
+        changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_tile_in_row");
       }
     }
   }
@@ -420,15 +416,7 @@ int reserve_tile_in_col(struct sudoku_cell *possible_cell, unsigned int number_s
         }
 
         // Make the reservation
-        if (board->debug_level >= 2) {
-          printf("reserve_tile_in_col: [%i,%i] = ", cell->row, cell->col);
-          print_number_set(reserve_number_set, "\n");
-        }
-        if (reserve_cell(cell, reserve_number_set)) {
-          changed++;
-          if (board->debug_level >= 1)
-            print_reserved_set_for_cell(cell);
-        }
+        changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_tile_in_col");
       }
     }
   }
@@ -458,15 +446,7 @@ int reserve_cells_with_index_in_tile(struct sudoku_cell *possible_cell, unsigned
         else 
           reserve_number_set = available_set & (~number_set);
         
-        if (board->debug_level >= 2) {
-          printf("reserve_cells_with_index_in_tile: [%i,%i] = ", cell->row, cell->col);
-          print_number_set(reserve_number_set, "\n");
-        }
-        if (reserve_cell(cell, reserve_number_set)) {
-          changed++;
-          if (board->debug_level >= 1)
-            print_reserved_set_for_cell(cell);
-        }
+       changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_cells_with_index_in_tile");
       }
     }
   }
@@ -519,15 +499,7 @@ int reserve_cells_with_index_in_row(struct sudoku_cell *possible_cell, unsigned 
         }
 
         // Make the reservation
-        if (board->debug_level >= 2) {
-          printf("reserve_cells_with_index_in_row: [%i,%i] = ", cell->row, cell->col);
-          print_number_set(reserve_number_set, "\n");
-        }
-        if (reserve_cell(cell, reserve_number_set)) {
-          changed++;
-          if (board->debug_level >= 1)
-            print_reserved_set_for_cell(cell);
-        }
+        changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_cells_with_index_in_row");
       }
     }
   }
@@ -571,15 +543,7 @@ int reserve_cells_with_index_in_col(struct sudoku_cell *possible_cell, unsigned 
         }
 
         // Make the reservation
-        if (board->debug_level >= 2) {
-          printf("reserve_cells_with_index_in_col: [%i,%i] = ", cell->row, cell->col);
-          print_number_set(reserve_number_set, "\n");
-        }
-        if (reserve_cell(cell, reserve_number_set)) {
-          changed++;
-          if (board->debug_level >= 1)
-            print_reserved_set_for_cell(cell);
-        }
+        changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_cells_with_index_in_col");
       }
     }
   }
@@ -714,16 +678,7 @@ int solve_eliminate_tiles_1(struct sudoku_board *board)
             for (index=0; index<9; index++) {
               if (NUMBER_TO_SET(index) & possible_index_set) {
                 // Finally - Reserve!!!
-                if (board->debug_level >= 2) {
-                  printf("solve_eliminate_tiles: (complete) [%i,%i] = ", 
-                          board->tile_ref[tile][index]->row, board->tile_ref[tile][index]->col);
-                  print_number_set(reserve_number_set, "\n");
-                }
-                if (reserve_cell(board->tile_ref[tile][index], reserve_number_set)) {
-                  changed++;
-                  if (board->debug_level >= 1)
-                    print_reserved_set_for_cell(board->tile_ref[tile][index]);
-                }
+                changed += reserve_cell_and_log(board->tile_ref[tile][index], reserve_number_set, "solve_eliminate_tiles (complete)");        
               }
             }
           }
@@ -747,16 +702,7 @@ int solve_eliminate_tiles_1(struct sudoku_board *board)
                         if (NUMBER_TO_SET(index) & index_set) {
                           // Finally - Reserve!!!
                           this_reserve_number_set = reserve_number_set & get_cell_available_set(board->tile_ref[tile][index]);
-                          if (board->debug_level >= 2) {
-                            printf("solve_eliminate_tiles: (partial) [%i,%i] = ", 
-                                    board->tile_ref[tile][index]->row, board->tile_ref[tile][index]->col);
-                            print_number_set(this_reserve_number_set, "\n");
-                          }
-                          if (reserve_cell(board->tile_ref[tile][index], this_reserve_number_set)) {
-                            changed++;
-                            if (board->debug_level >= 1)
-                              print_reserved_set_for_cell(board->tile_ref[tile][index]);
-                          }
+                          changed += reserve_cell_and_log(board->tile_ref[tile][index], this_reserve_number_set, "solve_eliminate_tiles (partial)");        
                         }
                       }
                     }
@@ -866,15 +812,7 @@ int solve_eliminate_rows_1(struct sudoku_board *board)
             for (col=0; col<9; col++) {
               if (NUMBER_TO_SET(col) & possible_index_set) {
                 // Finally - Reserve!!!
-                if (board->debug_level >= 2) {
-                  printf("solve_eliminate_rows: (complete) [%i,%i] = ", row, col);
-                  print_number_set(reserve_number_set, "\n");
-                }
-                if (reserve_cell(&board->cells[row][col], reserve_number_set)) {
-                  changed++;
-                  if (board->debug_level >= 1)
-                    print_reserved_set_for_cell(&board->cells[row][col]);
-                }
+                changed += reserve_cell_and_log(&board->cells[row][col], reserve_number_set, "solve_eliminate_rows");
               }
             }
           }
@@ -897,16 +835,8 @@ int solve_eliminate_rows_1(struct sudoku_board *board)
                       for (col=0; col<9; col++) {
                         if (NUMBER_TO_SET(col) & index_set) {
                           // Finally - Reserve!!!
-                          if (board->debug_level >= 2) {
-                            printf("solve_eliminate_rows: (partial) [%i,%i] = ", row, col);
-                            print_number_set(this_reserve_number_set, "\n");
-                          }
                           this_reserve_number_set = reserve_number_set & get_cell_available_set(&board->cells[row][col]);
-                          if (reserve_cell(&board->cells[row][col], this_reserve_number_set)) {
-                            changed++;
-                            if (board->debug_level >= 1)
-                              print_reserved_set_for_cell(&board->cells[row][col]);
-                          }
+                          changed += reserve_cell_and_log(&board->cells[row][col], this_reserve_number_set, "solve_eliminate_rows (partial)");
                         }
                       }
                     }
@@ -1005,15 +935,7 @@ int solve_eliminate_cols_1(struct sudoku_board *board)
             for (row=0; row<9; row++) {
               if (NUMBER_TO_SET(row) & possible_index_set) {
                 // Finally - Reserve!!!
-                if (board->debug_level >= 2) {
-                  printf("solve_eliminate_cols: (complete) [%i,%i] = ", row, col);
-                  print_number_set(reserve_number_set, "\n");
-                }
-                if (reserve_cell(&board->cells[row][col], reserve_number_set)) {
-                  changed++;
-                  if (board->debug_level >= 1)
-                    print_reserved_set_for_cell(&board->cells[row][col]);
-                }
+                changed += reserve_cell_and_log(&board->cells[row][col], reserve_number_set, "solve_eliminate_cols (complete)");
               }
             }
           }
@@ -1037,15 +959,7 @@ int solve_eliminate_cols_1(struct sudoku_board *board)
                         if (NUMBER_TO_SET(row) & index_set) {
                           // Finally - Reserve!!!
                           this_reserve_number_set = reserve_number_set & get_cell_available_set(&board->cells[row][col]);
-                          if (board->debug_level >= 2) {
-                            printf("solve_eliminate_rows: (partial) [%i,%i] = ", row, col);
-                            print_number_set(this_reserve_number_set, "\n");
-                          }
-                          if (reserve_cell(&board->cells[row][col], this_reserve_number_set)) {
-                            changed++;
-                            if (board->debug_level >= 1)
-                              print_reserved_set_for_cell(&board->cells[row][col]);
-                          }
+                          changed += reserve_cell_and_log(&board->cells[row][col], this_reserve_number_set, "solve_eliminate_rows (partial)");
                         }
                       }
                     }
@@ -1362,6 +1276,145 @@ int solve_eliminate(struct sudoku_board *board)
 
 
 static inline
+void analyze_tile_interlock_rectangle_helper(struct sudoku_board *board, struct sudoku_cell *cell1,
+                                             unsigned int set1, unsigned int set2,
+                                             unsigned int common_set, int *changed) 
+{
+  if ((common_set & set1) && (bit_count[set1 & ~common_set] == 1) && 
+      ((set2 & common_set) == 0)) {
+    (*changed) += reserve_cell_and_log(cell1, (set1 & ~common_set), "analyze_tile_interlock_rectangle");
+  }
+}
+
+
+static inline
+int analyze_tile_interlock_rectangle(struct sudoku_cell *cell1, struct sudoku_cell *cell2, 
+                                     struct sudoku_cell *cell3, struct sudoku_cell *cell4)
+{
+  int changed;
+  unsigned int set1, set2, set3, set4, common_set12, common_set34;
+  struct sudoku_board *board;
+
+  changed = 0;
+  board = cell1->board_ref;
+  set1 = get_cell_available_set(cell1);
+  set2 = get_cell_available_set(cell2);
+  set3 = get_cell_available_set(cell3);
+  set4 = get_cell_available_set(cell4);
+  common_set12 = (set1 & set2);
+  common_set34 = (set3 & set4);
+
+  if (board->debug_level >= 3) {
+    printf("set1: "); print_number_set(set1, "\n");
+    printf("set2: "); print_number_set(set2, "\n");
+    printf("set3: "); print_number_set(set3, "\n");
+    printf("set4: "); print_number_set(set4, "\n");
+    printf("common_set12: "); print_number_set(common_set12, "\n");
+    printf("common_set34: "); print_number_set(common_set34, "\n");
+  }
+
+  if ((bit_count[set1] == 2) && (bit_count[set2] == 2) &&
+      (bit_count[set3] == 2) && (bit_count[set4] == 2) &&
+      (bit_count[set1|set2|set3|set4] == 3)) {
+    if (bit_count[common_set34] == 1) {
+      analyze_tile_interlock_rectangle_helper(board, cell1, set1, set2, common_set34, &changed);
+      analyze_tile_interlock_rectangle_helper(board, cell2, set2, set1, common_set34, &changed);
+    }
+    if (bit_count[common_set12] == 1) {
+      analyze_tile_interlock_rectangle_helper(board, cell3, set3, set4, common_set12, &changed);
+      analyze_tile_interlock_rectangle_helper(board, cell4, set4, set3, common_set12, &changed);
+    }
+  }
+
+  return changed;
+}
+
+
+static
+int solve_tile_interlock_rectangle(struct sudoku_board *board)
+{
+  int row1, col1, row2, col2, start_row, start_col, changed;
+  unsigned int tile1;
+  struct sudoku_cell *cell1, *cell2, *cell3, *cell4;
+  const int search_start_row_for_tile[9] = { 3, 3, 0, 6, 6, 0, 0, 0, 0};
+  const int search_start_col_for_tile[9] = { 3, 6, 0, 3, 6, 0, 0, 0, 0};
+
+  if (board->debug_level >= 2)
+    printf("Solve tile interlock rectangle\n");
+
+  changed = 0;
+  for (row1=0; row1<6; row1++) {
+    if (board->debug_level >= 2)
+      printf("  Row %i\n", row1);
+
+    for (col1=0; col1<6; col1++) {
+      if (board->debug_level >= 2)
+        printf("    Col %i\n", col1);
+
+      cell1 = &board->cells[row1][col1];
+      if (cell1->number == 0) {
+        tile1 = cell1->tile;
+
+        start_row = search_start_row_for_tile[tile1];
+        start_col = search_start_col_for_tile[tile1];
+        assert(start_row && start_col);
+
+        for (row2=start_row; row2<9; row2++) {
+          for (col2=start_col; col2<9; col2++) {
+            cell2 = &board->cells[row2][col2]; 
+            if ((cell2->number == 0) && 
+                (board->cells[row1][col2].number == 0) &&
+                (board->cells[row2][col1].number == 0)) {
+              // We have found a rectangle of empty cells
+              if (board->debug_level >= 3)
+                printf("Found inter-tile rectangle: [%i,%i]-[%i,%i]\n", row1, col1, row2, col2);
+              cell3 = &board->cells[row2][col1];
+              cell4 = &board->cells[row1][col2];
+              changed += analyze_tile_interlock_rectangle(cell1, cell2, cell3, cell4);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return changed;
+}
+
+
+static
+int solve_tile_interlock(struct sudoku_board *board)
+{
+  int this_changed, changed, total_changed, round;
+
+  if (board->debug_level >= 2)
+    printf("Solve tile interlock\n");
+
+  total_changed = 0;
+  round = 0;
+
+  do {
+    if (board->debug_level >= 2)
+      printf("  Round %i:\n", round);
+    round++;
+    changed = 0;
+
+    this_changed = solve_tile_interlock_rectangle(board);
+    if (is_board_done(board))
+      break;
+    if (this_changed)
+       changed += this_changed + solve_possible(board);
+    if (is_board_done(board))
+      break;
+
+    total_changed += changed;
+  } while ((changed > 0) && (!is_board_done(board)));
+
+  return total_changed;
+}
+
+
+static inline
 void solve_hidden_cell(struct sudoku_cell *cell)
 {
   unsigned int number, available_set;
@@ -1406,6 +1459,7 @@ void solve_hidden_cell(struct sudoku_cell *cell)
 }
 
 
+static
 void solve_hidden(struct sudoku_board *board)
 {
   struct sudoku_cell *cell;
@@ -1445,6 +1499,9 @@ int solve(struct sudoku_board *board)
 
   if (!is_board_done(board))
     changed += solve_eliminate(board);
+
+  if (!is_board_done(board))
+    solve_tile_interlock(board);   
 
   if (!is_board_done(board))
      solve_hidden(board);
