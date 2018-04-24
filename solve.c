@@ -1206,7 +1206,7 @@ int solve_eliminate_cols_2(struct sudoku_board *board)
 int solve_eliminate(struct sudoku_board *board)
 {
   int this_changed, changed, total_changed, round, i;
-  int (*solve_func_arr[])(struct sudoku_board*) = {
+  int (*const solve_func_arr[])(struct sudoku_board*) = {
     solve_eliminate_tiles_1,
     solve_eliminate_rows_1,
     solve_eliminate_cols_1,
