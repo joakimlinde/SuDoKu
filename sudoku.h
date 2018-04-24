@@ -31,6 +31,17 @@
 #define INDEX_TO_SET(number) (1 << (number)) 
 #define TAKEN_TO_AVAIL_SET(taken) ((~(taken)) & SET_MASK)
 
+#define SET_ADD(s1, s2)              ((s1) | (s2))  // Add s1 and s2 (s1+s2)
+#define SET_SUB(s1, s2)              ((s1) & (~(s2)))  // Subtract s2 from s1 (s1-s2)
+#define SET_INTERSECTION(s1, s2)     ((s1) & (s2))  // Intersection of s1 and s2
+#define SET_SUBSET(s1, s2)           (((s1) | (s2)) == (s2))  // Is s1 a subset of s2 
+#define SET_STRICT_SUBSET(s1, s2)    ((((s1) | (s2)) == (s2)) && ((s1) != (s2)))  // Is s1 a strict subset of s2 
+#define SET_SUPERSET(s1, s2)         (((s1) | (s2)) == (s1))  // Is s1 a superset of s2 
+#define SET_STRICT_SUPERSET(s1, s2)  ((((s1) | (s2)) == (s1)) && ((s1) != (s2)))  // Is s1 a strict superset of s2 
+#define SET_EMPTY(s)                 ((s) == 0)  // Is s empty 
+#define SET_NOT_EMPTY(s)             ((s) != 0)  // Is s not empty 
+#define SET_IDENTICAL(s1, s2)        ((s1) == (s2))  // Is s1 identical to s2
+#define SET_NOT_IDENTICAL(s1, s2)    ((s1) != (s2))  // Is s1 not identical to s2
 
 // Datastructures
 
