@@ -264,7 +264,6 @@ int reserve_cell_and_log(struct sudoku_cell *cell, unsigned int number_set, cons
   int changed;
 
   board = cell->board_ref;
-
   if ((board->debug_level >= 2) && (func_name)) {    
     printf("%s: [%i,%i] = ", func_name, cell->row, cell->col);
     print_number_set(number_set, "\n");
@@ -560,7 +559,7 @@ int reserve_cells_with_index_in_col(struct sudoku_cell *possible_cell, unsigned 
 }
 
 
-static
+static inline
 int solve_possible(struct sudoku_board *board)
 {
   int row, col, round, changed, changed_total;
@@ -1206,7 +1205,15 @@ int solve_eliminate_cols_2(struct sudoku_board *board)
 
 int solve_eliminate(struct sudoku_board *board)
 {
-  int this_changed, changed, total_changed, round;
+  int this_changed, changed, total_changed, round, i;
+  int (*solve_func_arr[])(struct sudoku_board*) = {
+    solve_eliminate_tiles_1,
+    solve_eliminate_rows_1,
+    solve_eliminate_cols_1,
+    solve_eliminate_rows_2,
+    solve_eliminate_cols_2,
+    solve_eliminate_tiles_2
+  }; 
 
   if (board->debug_level >= 2)
     printf("Solve eliminate\n");
@@ -1216,57 +1223,19 @@ int solve_eliminate(struct sudoku_board *board)
 
   do {
     if (board->debug_level >= 2)
-      printf("  Round %i:\n", round);
-    round++;
+      printf("  Round %i:\n", round++);
     changed = 0;
 
-    this_changed = solve_eliminate_tiles_1(board);
-    if (is_board_done(board))
-      break;
-    if (this_changed)
-       changed += this_changed + solve_possible(board);
-    if (is_board_done(board))
-      break;
-
-    this_changed = solve_eliminate_rows_1(board);
-    if (is_board_done(board))
-      break;
-    if (this_changed)
-       changed += this_changed + solve_possible(board);
-    if (is_board_done(board))
-      break;
-
-    this_changed =  solve_eliminate_cols_1(board);
-    if (is_board_done(board))
-      break;
-    if (this_changed)
-       changed += this_changed + solve_possible(board);
-    if (is_board_done(board))
-      break;
-
-    this_changed =  solve_eliminate_rows_2(board);
-    if (is_board_done(board))
-      break;
-    if (this_changed)
-       changed += this_changed + solve_possible(board);
-    if (is_board_done(board))
-      break;
-
-    this_changed =  solve_eliminate_cols_2(board);
-    if (is_board_done(board))
-      break;
-    if (this_changed)
-       changed += this_changed + solve_possible(board);
-    if (is_board_done(board))
-      break;
-
-    this_changed =  solve_eliminate_tiles_2(board);
-    if (is_board_done(board))
-      break;
-    if (this_changed)
-       changed += this_changed + solve_possible(board);
-    if (is_board_done(board))
-      break;
+    for(i=0; i<(sizeof(solve_func_arr)/sizeof(solve_func_arr[0])) ; i++) {
+      this_changed = solve_func_arr[i](board);
+      if (is_board_done(board))
+        break;
+      if (this_changed) {
+        changed += this_changed + solve_possible(board);
+        if (is_board_done(board))
+          break;
+      }
+    }
 
     total_changed += changed;
   } while ((changed > 0) && (!is_board_done(board)));
