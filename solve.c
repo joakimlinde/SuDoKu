@@ -20,6 +20,7 @@
 #include <assert.h>
 #include "sudoku.h"
 
+#define DINDENT "      "
 
 static unsigned int available_set_to_number[NUMBER_TO_SET(10)+1];
 static unsigned int bit_count[NUMBER_TO_SET(10)+1];
@@ -47,7 +48,7 @@ static void print_number_set(unsigned int number_set, const char *postfix);
 
 static void print_reserved_set_for_cell(struct sudoku_cell *cell);
 
-static void print_possible(struct sudoku_board *board);
+static void print_possible(struct sudoku_board *board, const char *prefix);
 
 int solve(struct sudoku_board *board);
 
@@ -182,8 +183,11 @@ void set_cell_number_and_log(struct sudoku_cell *cell, unsigned int number)
 {
   set_cell_number(cell, number);
 
-  if (cell->board_ref->debug_level)
-    printf("    [%i,%i]  =  %i\n", cell->row, cell->col, number);  
+  if (cell->board_ref->debug_level) {
+    if (cell->board_ref->debug_level > 1)
+      printf(DINDENT);  
+    printf("[%i,%i]  =  %i\n", cell->row, cell->col, number);  
+  }
 }
 
 
@@ -264,8 +268,8 @@ int reserve_cell_and_log(struct sudoku_cell *cell, unsigned int number_set, cons
   int changed;
 
   board = cell->board_ref;
-  if ((board->debug_level >= 2) && (func_name)) {    
-    printf("%s: [%i,%i] = ", func_name, cell->row, cell->col);
+  if ((board->debug_level >= 3) && (func_name)) {     
+    printf(DINDENT "%s: [%i,%i] = ", func_name, cell->row, cell->col);
     print_number_set(number_set, "\n");
   }
 
@@ -632,14 +636,14 @@ int solve_eliminate_tiles_1(struct sudoku_board *board)
             possible_cell = cell;
             possible_index_set |= NUMBER_TO_SET(index);
 
-            if (board->debug_level >= 3)
-              printf("Possible [%i,%i] avail_set: 0x%X <> 0x%X cell_number: %i\n", 
+            if (board->debug_level >= 4)
+              printf(DINDENT "Possible [%i,%i] avail_set: 0x%X <> 0x%X cell_number: %i\n", 
                      cell->row, cell->col, get_cell_available_set(cell), number_set, cell->number);
           }
         }
 
-        if (board->debug_level >= 3) {
-          printf("Tile: %i, Number: %i, possibilities: %i, possible_index_set is ", tile, number, possibilities);
+        if (board->debug_level >= 4) {
+          printf(DINDENT "Tile: %i, Number: %i, possibilities: %i, possible_index_set is ", tile, number, possibilities);
           for(int i=0; i<9; i++)
             if (possible_index_set & NUMBER_TO_SET(i))
               printf("%i ", i);
@@ -774,8 +778,8 @@ int solve_eliminate_rows_1(struct sudoku_board *board)
             possible_cell = cell;
             possible_index_set |= NUMBER_TO_SET(col);
 
-            if (board->debug_level >= 3)
-              printf("Possible [%i,%i] avail_set: 0x%X <> 0x%X cell_number: %i\n", 
+            if (board->debug_level >= 4)
+              printf(DINDENT "Possible [%i,%i] avail_set: 0x%X <> 0x%X cell_number: %i\n", 
                      cell->row, cell->col, get_cell_available_set(cell), number_set, cell->number);
           }
         }
@@ -897,8 +901,8 @@ int solve_eliminate_cols_1(struct sudoku_board *board)
             possible_cell = cell;
             possible_index_set |= NUMBER_TO_SET(row);
 
-            if (board->debug_level >= 3)
-              printf("Possible [%i,%i] avail_set: 0x%X <> 0x%X cell_number: %i\n", 
+            if (board->debug_level >= 4)
+              printf(DINDENT "Possible [%i,%i] avail_set: 0x%X <> 0x%X cell_number: %i\n", 
                      cell->row, cell->col, get_cell_available_set(cell), number_set, cell->number);
           }
         }
@@ -1024,8 +1028,8 @@ int find_and_reserve_group_with_index(struct sudoku_cell *cell,
             if (prior_possible_number_set[j] && ((joint_number_set | prior_possible_number_set[j]) == joint_number_set)) {
               // Now we have the three indexes (i, j, row) that go into possible_index_set
               possible_index_set = INDEX_TO_SET(i) | INDEX_TO_SET(j) | INDEX_TO_SET(this_index);
-              if (cell->board_ref->debug_level >= 3)
-                printf("%s: Reserving cells in row %i with possibilities: %i index_set: %i  number_set: %i\n",
+              if (cell->board_ref->debug_level >= 4)
+                printf(DINDENT "%s: Reserving cells in row %i with possibilities: %i index_set: %i  number_set: %i\n",
                         parent_func_name, cell->row, possibilities, possible_index_set, joint_number_set);
               if (reserve_with_index_set_func(cell, possible_index_set, joint_number_set))
                 changed++;
@@ -1056,8 +1060,8 @@ int solve_eliminate_tiles_2(struct sudoku_board *board)
   for (tile=0; tile<9; tile++) {
     if (board->debug_level >= 2) {
       printf("  Tile %i\n", tile);
-      if (board->debug_level >= 3)
-        print_possible(board);
+      if (board->debug_level >= 4)
+        print_possible(board, DINDENT);
     }
 
     for (index=0; index<9; index++) {
@@ -1110,8 +1114,8 @@ int solve_eliminate_rows_2(struct sudoku_board *board)
   for (row=0; row<9; row++) {
     if (board->debug_level >= 2) {
       printf("  Row %i\n", row);
-      if (board->debug_level >= 3)
-        print_possible(board);
+      if (board->debug_level >= 4)
+        print_possible(board, DINDENT);
     }
 
     for (col=0; col<9; col++) {
@@ -1164,8 +1168,8 @@ int solve_eliminate_cols_2(struct sudoku_board *board)
   for (col=0; col<9; col++) {
     if (board->debug_level >= 2) {
       printf("  Col %i\n", col);
-      if (board->debug_level >= 3)
-        print_possible(board);
+      if (board->debug_level >= 4)
+        print_possible(board, DINDENT);
     }
 
     for (row=0; row<9; row++) {
@@ -1273,13 +1277,13 @@ int analyze_tile_interlock_rectangle(struct sudoku_cell *cell1, struct sudoku_ce
   common_set12 = (set1 & set2);
   common_set34 = (set3 & set4);
 
-  if (board->debug_level >= 3) {
-    printf("set1: "); print_number_set(set1, "\n");
-    printf("set2: "); print_number_set(set2, "\n");
-    printf("set3: "); print_number_set(set3, "\n");
-    printf("set4: "); print_number_set(set4, "\n");
-    printf("common_set12: "); print_number_set(common_set12, "\n");
-    printf("common_set34: "); print_number_set(common_set34, "\n");
+  if (board->debug_level >= 4) {
+    printf(DINDENT "set1: "); print_number_set(set1, "\n");
+    printf(DINDENT "set2: "); print_number_set(set2, "\n");
+    printf(DINDENT "set3: "); print_number_set(set3, "\n");
+    printf(DINDENT "set4: "); print_number_set(set4, "\n");
+    printf(DINDENT "common_set12: "); print_number_set(common_set12, "\n");
+    printf(DINDENT "common_set34: "); print_number_set(common_set34, "\n");
   }
 
   if ((bit_count[set1] == 2) && (bit_count[set2] == 2) &&
@@ -1335,8 +1339,8 @@ int solve_tile_interlock_rectangle(struct sudoku_board *board)
                 (board->cells[row1][col2].number == 0) &&
                 (board->cells[row2][col1].number == 0)) {
               // We have found a rectangle of empty cells
-              if (board->debug_level >= 3)
-                printf("Found inter-tile rectangle: [%i,%i]-[%i,%i]\n", row1, col1, row2, col2);
+              if (board->debug_level >= 4)
+                printf(DINDENT "Found inter-tile rectangle: [%i,%i]-[%i,%i]\n", row1, col1, row2, col2);
               cell3 = &board->cells[row2][col1];
               cell4 = &board->cells[row1][col2];
               changed += analyze_tile_interlock_rectangle(cell1, cell2, cell3, cell4);
@@ -1434,10 +1438,10 @@ void solve_hidden(struct sudoku_board *board)
   struct sudoku_cell *cell;
   struct sudoku_board *tmp;
 
-  if (board->debug_level) {
+  if (board->debug_level >= 2) {
     printf("Solve hidden\n");
     print_board(board);
-    print_possible(board);
+    print_possible(board, NULL);
   }
 
   // Is the board good to go to another nest level?
@@ -1499,17 +1503,19 @@ void print_number_set(unsigned int number_set, const char *postfix)
     printf(" }");
 }
 
+
 static
 void print_reserved_set_for_cell(struct sudoku_cell *cell)
 {
-  printf("    [%i,%i]  =  ", cell->row, cell->col);
+  if (cell->board_ref->debug_level > 1)
+    printf("      ");  
+  printf("[%i,%i]  =  ", cell->row, cell->col);
   print_number_set(cell->reserved_for_number_set, "\n");
-
 }
 
 
 static
-void print_possible(struct sudoku_board *board)
+void print_possible(struct sudoku_board *board, const char *prefix)
 {
   int row, col, i;
   struct sudoku_cell *cell;
@@ -1521,6 +1527,8 @@ void print_possible(struct sudoku_board *board)
 
       if (cell->number == 0) {
 
+        if (prefix)
+          printf("%s", prefix);
         printf("[%i,%i] Possible: ", row, col);
         possible_set = get_cell_available_set(cell) >> 1;
         for (i=0; i<9; i++) {
@@ -1565,7 +1573,7 @@ void print_solutions(struct sudoku_board *board)
   if (board->solutions_count == 0) {
     print_board(board);
     if (board->undetermined_count)
-      print_possible(board);
+      print_possible(board, NULL);
   } else {
     printf("Number of solutions: %i\n", board->solutions_count);
     current = board->solutions_list;
