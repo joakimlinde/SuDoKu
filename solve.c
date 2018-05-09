@@ -577,7 +577,7 @@ int solve_possible(struct sudoku_board *board)
   round = 0;
   do {
     if (board->debug_level >= 2)
-      printf("  Round %i:\n", round++);
+      printf("  Round %i\n", round++);
 
     changed = 0;
     for (row=0; row<9; row++) {
@@ -594,7 +594,7 @@ int solve_possible(struct sudoku_board *board)
       }
     }
     changed_total += changed;
-  } while (changed);
+  } while (changed && !is_board_done(board));
 
   return changed_total;
 }
