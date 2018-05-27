@@ -1251,11 +1251,17 @@ int solve_eliminate(struct sudoku_board *board)
 static inline
 void analyze_tile_interlock_rectangle_helper(struct sudoku_board *board, struct sudoku_cell *cell1,
                                              unsigned int set1, unsigned int set2,
-                                             unsigned int common_set, int *changed) 
+                                             unsigned int set3, unsigned int set4, int *changed) 
 {
-  if ((common_set & set1) && (bit_count[set1 & ~common_set] == 1) && 
-      ((set2 & common_set) == 0)) {
-    (*changed) += reserve_cell_and_log(cell1, (set1 & ~common_set), "analyze_tile_interlock_rectangle");
+  unsigned int common_set;
+
+  common_set = (set3 & set4);
+  
+  if ((bit_count[set3] == 2) && (bit_count[set4] == 2) && (bit_count[common_set] == 1)) {
+    if ((set1 & common_set) && (((set3|set4) & ~common_set) == set2)) {
+     // Remove common_set from cell1
+     (*changed) += reserve_cell_and_log(cell1, (set1 & ~common_set), "analyze_tile_interlock_rectangle");
+    }
   }
 }
 
@@ -1274,30 +1280,22 @@ int analyze_tile_interlock_rectangle(struct sudoku_cell *cell1, struct sudoku_ce
   set2 = get_cell_available_set(cell2);
   set3 = get_cell_available_set(cell3);
   set4 = get_cell_available_set(cell4);
-  common_set12 = (set1 & set2);
-  common_set34 = (set3 & set4);
 
   if (board->debug_level >= 4) {
     printf(DINDENT "set1: "); print_number_set(set1, "\n");
     printf(DINDENT "set2: "); print_number_set(set2, "\n");
     printf(DINDENT "set3: "); print_number_set(set3, "\n");
     printf(DINDENT "set4: "); print_number_set(set4, "\n");
+    common_set12 = (set1 & set2);
+    common_set34 = (set3 & set4);
     printf(DINDENT "common_set12: "); print_number_set(common_set12, "\n");
     printf(DINDENT "common_set34: "); print_number_set(common_set34, "\n");
   }
 
-  if ((bit_count[set1] == 2) && (bit_count[set2] == 2) &&
-      (bit_count[set3] == 2) && (bit_count[set4] == 2) &&
-      (bit_count[set1|set2|set3|set4] == 3)) {
-    if (bit_count[common_set34] == 1) {
-      analyze_tile_interlock_rectangle_helper(board, cell1, set1, set2, common_set34, &changed);
-      analyze_tile_interlock_rectangle_helper(board, cell2, set2, set1, common_set34, &changed);
-    }
-    if (bit_count[common_set12] == 1) {
-      analyze_tile_interlock_rectangle_helper(board, cell3, set3, set4, common_set12, &changed);
-      analyze_tile_interlock_rectangle_helper(board, cell4, set4, set3, common_set12, &changed);
-    }
-  }
+  analyze_tile_interlock_rectangle_helper(board, cell1, set1, set2, set3, set4, &changed);
+  analyze_tile_interlock_rectangle_helper(board, cell2, set2, set1, set3, set4, &changed);
+  analyze_tile_interlock_rectangle_helper(board, cell3, set3, set4, set1, set2, &changed);
+  analyze_tile_interlock_rectangle_helper(board, cell4, set4, set3, set1, set2, &changed);
 
   return changed;
 }
@@ -1375,10 +1373,14 @@ int solve_tile_interlock(struct sudoku_board *board)
     this_changed = solve_tile_interlock_rectangle(board);
     if (is_board_done(board))
       break;
-    if (this_changed)
-       changed += this_changed + solve_possible(board);
-    if (is_board_done(board))
-      break;
+    if (this_changed) {
+      changed += this_changed + solve_possible(board);
+      if (is_board_done(board))
+        break;
+      changed += solve_eliminate(board);
+      if (is_board_done(board))
+        break;
+    }
 
     total_changed += changed;
   } while ((changed > 0) && (!is_board_done(board)));
@@ -1466,12 +1468,12 @@ void solve_hidden(struct sudoku_board *board)
 
 int solve(struct sudoku_board *board)
 {
-  int changed, solutions_count;
+  int solutions_count;
 
-  changed = solve_possible(board);
+  solve_possible(board);
 
   if (!is_board_done(board))
-    changed += solve_eliminate(board);
+    solve_eliminate(board);
 
   if (!is_board_done(board))
     solve_tile_interlock(board);   
