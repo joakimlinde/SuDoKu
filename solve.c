@@ -76,7 +76,7 @@ unsigned int set_to_index_func(unsigned int *set)
   int index = 0;
 
   if (*set == 0)
-    return 0xFFFF;
+    return 0;
 
   while (index<10) {
     if (*set & (1 << index)) {
@@ -85,7 +85,7 @@ unsigned int set_to_index_func(unsigned int *set)
     }
     index++;
   }
-  return 0xFFFF;
+  return 0;
 }
 
 
@@ -151,11 +151,11 @@ unsigned int get_cell_available_set(struct sudoku_cell *cell)
 {
   unsigned int taken_set, available_set;
 
-  taken_set = *cell->row_taken_set_ref;
-  taken_set |= *cell->col_taken_set_ref;
-  taken_set |= *cell->tile_taken_set_ref;
+  taken_set = *cell->row_number_taken_set_ref;
+  taken_set |= *cell->col_number_taken_set_ref;
+  taken_set |= *cell->tile_number_taken_set_ref;
 
-  available_set = TAKEN_TO_AVAIL_SET(taken_set);
+  available_set = NUMBER_TAKEN_TO_AVAILABLE_SET(taken_set);
 
   if (available_set && cell->reserved_for_number_set)
      available_set &= cell->reserved_for_number_set;
@@ -215,9 +215,21 @@ void set_cell_number(struct sudoku_cell *cell, unsigned int number)
   cell->reserved_for_number_set = 0;
 
   number_set = NUMBER_TO_SET(number);
-  *cell->row_taken_set_ref |= number_set;
-  *cell->col_taken_set_ref |= number_set;
-  *cell->tile_taken_set_ref |= number_set;
+  *cell->row_number_taken_set_ref |= number_set;
+  *cell->col_number_taken_set_ref |= number_set;
+  *cell->tile_number_taken_set_ref |= number_set;
+
+  *cell->row_cell_empty_set_ref &= ~(INDEX_TO_SET(cell->col));
+  if (*cell->row_cell_empty_set_ref == 0)
+    cell->board_ref->row_empty_set &= ~(INDEX_TO_SET(cell->row));
+  
+  *cell->col_cell_empty_set_ref &= ~(INDEX_TO_SET(cell->row));
+  if (*cell->col_cell_empty_set_ref == 0)
+    cell->board_ref->col_empty_set &= ~(INDEX_TO_SET(cell->col));
+  
+  *cell->tile_cell_empty_set_ref &= ~(INDEX_TO_SET(cell->index_in_tile));
+  if (*cell->tile_cell_empty_set_ref == 0)
+    cell->board_ref->tile_empty_set &= ~(INDEX_TO_SET(cell->tile));
 }
 
 
@@ -239,11 +251,11 @@ void handle_bad_reserve_cell(struct sudoku_cell *cell, unsigned int number_set)
 {
   unsigned int taken_set, available_set;
 
-  taken_set = *cell->row_taken_set_ref;
-  taken_set |= *cell->col_taken_set_ref;
-  taken_set |= *cell->tile_taken_set_ref;
+  taken_set = *cell->row_number_taken_set_ref;
+  taken_set |= *cell->col_number_taken_set_ref;
+  taken_set |= *cell->tile_number_taken_set_ref;
 
-  available_set = TAKEN_TO_AVAIL_SET(taken_set);
+  available_set = NUMBER_TAKEN_TO_AVAILABLE_SET(taken_set);
 
   if ((cell->board_ref->debug_level == 0) && (number_set == 0)) {
     // Do nothing, but set_board_bad (below) !!!
@@ -271,11 +283,11 @@ int reserve_cell(struct sudoku_cell *cell, unsigned int number_set)
   unsigned int taken_set, available_set, new_reserved_for_number_set;
   int changed;
 
-  taken_set = *cell->row_taken_set_ref;
-  taken_set |= *cell->col_taken_set_ref;
-  taken_set |= *cell->tile_taken_set_ref;
+  taken_set = *cell->row_number_taken_set_ref;
+  taken_set |= *cell->col_number_taken_set_ref;
+  taken_set |= *cell->tile_number_taken_set_ref;
 
-  available_set = TAKEN_TO_AVAIL_SET(taken_set);
+  available_set = NUMBER_TAKEN_TO_AVAILABLE_SET(taken_set);
 
   // Make sure you only reserve numbers that are available
   if (((number_set & available_set) == 0) ||
@@ -605,8 +617,9 @@ int reserve_cells_with_index_in_col(struct sudoku_cell *possible_cell, unsigned 
   return changed;
 }
 
-
-static inline
+#if 0
+// This is the old slow solve_possible
+static
 int solve_possible(struct sudoku_board *board)
 {
   int row, col, round, changed, changed_total;
@@ -641,6 +654,51 @@ int solve_possible(struct sudoku_board *board)
 
   return changed_total;
 }
+#else
+
+
+static
+int solve_possible(struct sudoku_board *board)
+{
+  unsigned int row, col, row_set, col_set;
+  int round, changed, changed_total;
+  struct sudoku_cell *cell;
+  unsigned int number;
+
+  if (board->debug_level >= 2)
+    printf("Solve possible\n");
+
+  changed_total = 0;
+  round = 0;
+  do {
+    if (board->debug_level >= 2)
+      printf("  Round %i\n", round++);
+
+    // Loop over all empty cells by going row by row and col by col
+    changed = 0;
+    row_set = board->row_empty_set;
+    while (row_set) {
+      row = get_next_index_from_set(&row_set);
+      col_set = board->row_cell_empty_set[row];
+      while (col_set) {
+        col = get_next_index_from_set(&col_set);
+        cell = &board->cells[row][col];
+        assert(cell->number == 0);
+        number = get_cell_available_number(cell);
+
+        if (number) {
+          set_cell_number_and_log(cell, number);
+          changed++;
+        }
+      }
+    }
+
+    changed_total += changed;
+  } while (changed && !is_board_done(board));
+
+  return changed_total;
+}
+#endif
 
 
 static
@@ -665,7 +723,7 @@ int solve_eliminate_tiles_1(struct sudoku_board *board)
       prior_possible_index_set[number-1] = 0;
 
       // Check if number is already taken in this tile. If so, skip the number!
-      if (!(board->tile_taken_set[tile] & number_set)) {
+      if (!(board->tile_number_taken_set[tile] & number_set)) {
         possibilities = 0;
         possible_cell = 0;
         possible_index_set = 0;
@@ -807,7 +865,7 @@ int solve_eliminate_rows_1(struct sudoku_board *board)
       prior_possible_index_set[number-1] = 0;
 
       // Check if number is already taken in this row. If so, skip the number!
-      if (!(board->row_taken_set[row] & number_set)) {
+      if (!(board->row_number_taken_set[row] & number_set)) {
         possibilities = 0;
         possible_cell = 0;
         possible_index_set = 0;
@@ -930,7 +988,7 @@ int solve_eliminate_cols_1(struct sudoku_board *board)
       prior_possible_index_set[number-1] = 0;
 
       // Check if number is already taken in this column. If so, skip the number!
-      if (!(board->col_taken_set[col] & number_set)) {
+      if (!(board->col_number_taken_set[col] & number_set)) {
         possibilities = 0;
         possible_cell = 0;
         possible_index_set = 0;
@@ -1270,7 +1328,7 @@ int solve_eliminate(struct sudoku_board *board)
 
   do {
     if (board->debug_level >= 2)
-      printf("  Round %i:\n", round++);
+      printf("  Round %i\n", round++);
     changed = 0;
 
     for(i=0; i<(sizeof(solve_func_arr)/sizeof(solve_func_arr[0])) ; i++) {
@@ -1409,7 +1467,7 @@ int solve_tile_interlock(struct sudoku_board *board)
 
   do {
     if (board->debug_level >= 2)
-      printf("  Round %i:\n", round);
+      printf("  Round %i\n", round);
     round++;
     changed = 0;
 
@@ -1429,6 +1487,43 @@ int solve_tile_interlock(struct sudoku_board *board)
   } while ((changed > 0) && (!is_board_done(board)));
 
   return total_changed;
+}
+
+
+static
+int solve_validate(struct sudoku_board *board)
+{
+  int row, col, round, changed, changed_total;
+  struct sudoku_cell *cell;
+  unsigned int number;
+
+  if (board->debug_level >= 2)
+    printf("Solve possible\n");
+
+  changed_total = 0;
+  round = 0;
+  do {
+    if (board->debug_level >= 2)
+      printf("  Round %i\n", round++);
+
+    changed = 0;
+    for (row=0; row<9; row++) {
+      for (col=0; col<9; col++) {
+        cell = &board->cells[row][col];
+        if (cell->number == 0) {
+          number = get_cell_available_number(cell);
+
+          if (number) {
+            set_cell_number_and_log(cell, number);
+            changed++;
+          }
+        }
+      }
+    }
+    changed_total += changed;
+  } while (changed && !is_board_done(board));
+
+  return changed_total;
 }
 
 
@@ -1582,11 +1677,11 @@ void print_possible(struct sudoku_board *board, const char *prefix)
           possible_set >>= 1;
         }
 
-        taken_set = *cell->row_taken_set_ref;
-        taken_set |= *cell->col_taken_set_ref;
-        taken_set |= *cell->tile_taken_set_ref;
+        taken_set = *cell->row_number_taken_set_ref;
+        taken_set |= *cell->col_number_taken_set_ref;
+        taken_set |= *cell->tile_number_taken_set_ref;
 
-        available_set = TAKEN_TO_AVAIL_SET(taken_set) >> 1;
+        available_set = NUMBER_TAKEN_TO_AVAILABLE_SET(taken_set) >> 1;
 
         printf("   (available:");
         for (i=0; i<9; i++) {

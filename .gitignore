@@ -5,3 +5,4 @@ sudoku
 logs
 sudokus
 .vscode
+.DS_Store
