@@ -24,6 +24,10 @@
 
 static unsigned int available_set_to_number[NUMBER_TO_SET(10)+1];
 static unsigned int bit_count[NUMBER_TO_SET(10)+1];
+static struct {
+  unsigned int remaining_set;
+  unsigned int index;
+} set_to_index[NUMBER_TO_SET(10)+1];
 
 static const unsigned int index_tile_mask[] = {
   0x007, // 000 000 111
@@ -66,16 +70,55 @@ int bit_count_func(unsigned int number)
 }
 
 
+static inline
+unsigned int set_to_index_func(unsigned int *set)
+{
+  int index = 0;
+
+  if (*set == 0)
+    return 0xFFFF;
+
+  while (index<10) {
+    if (*set & (1 << index)) {
+      *set &=  ~(1 << index);
+      return index;
+    }
+    index++;
+  }
+  return 0xFFFF;
+}
+
+
 void init()
 {
   int i;
 
   for (i=0; i<=NUMBER_TO_SET(10); i++)
     available_set_to_number[i] = 0;
+
   for (i=1; i<=9; i++)
     available_set_to_number[NUMBER_TO_SET(i)] = i;
-  for (i=0; i<NUMBER_TO_SET(10); i++)
+
+  for (i=0; i<NUMBER_TO_SET(10); i++) {
     bit_count[i] = bit_count_func(i);
+    set_to_index[i].remaining_set = i;
+    set_to_index[i].index = set_to_index_func(&(set_to_index[i].remaining_set));    
+  }
+}
+
+
+static inline
+unsigned int get_next_index_from_set(unsigned int *set)
+{
+  unsigned int index; 
+
+  assert(*set);
+  assert(*set < NUMBER_TO_SET(10));
+  index = set_to_index[*set].index; 
+  *set = set_to_index[*set].remaining_set;
+  assert(index<10);
+  
+  return index; 
 }
 
 
