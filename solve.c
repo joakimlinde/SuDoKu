@@ -47,7 +47,6 @@ static const unsigned int index_col_mask[] = {
   0x124  // 100 100 100
 };
 
-
 static void print_number_set(unsigned int number_set, const char *postfix);
 
 static void print_reserved_set_for_cell(struct sudoku_cell *cell);
@@ -147,6 +146,45 @@ int is_board_done(struct sudoku_board *board)
 
 
 static inline
+void mark_board_not_dirty(struct sudoku_board *board)
+{
+  board->row_dirty_set = 0;
+  board->col_dirty_set = 0;
+  board->tile_dirty_set = 0;
+}
+
+
+static inline
+void mark_cell_dirty(struct sudoku_cell *cell)
+{
+  struct sudoku_board *board = cell->board_ref;
+
+  board->row_dirty_set |= INDEX_TO_SET(cell->row);
+  board->col_dirty_set |= INDEX_TO_SET(cell->col);
+  board->tile_dirty_set |= INDEX_TO_SET(cell->tile);
+}
+
+
+static inline
+void mark_cell_not_empty(struct sudoku_cell *cell)
+{
+  struct sudoku_board *board = cell->board_ref;
+
+  *cell->row_cell_empty_set_ref &= ~(INDEX_TO_SET(cell->col));
+  if (*cell->row_cell_empty_set_ref == 0)
+    board->row_empty_set &= ~(INDEX_TO_SET(cell->row));
+  
+  *cell->col_cell_empty_set_ref &= ~(INDEX_TO_SET(cell->row));
+  if (*cell->col_cell_empty_set_ref == 0)
+    board->col_empty_set &= ~(INDEX_TO_SET(cell->col));
+  
+  *cell->tile_cell_empty_set_ref &= ~(INDEX_TO_SET(cell->index_in_tile));
+  if (*cell->tile_cell_empty_set_ref == 0)
+    board->tile_empty_set &= ~(INDEX_TO_SET(cell->tile));
+}
+
+
+static inline
 unsigned int get_cell_available_set(struct sudoku_cell *cell)
 {
   unsigned int taken_set, available_set;
@@ -219,17 +257,8 @@ void set_cell_number(struct sudoku_cell *cell, unsigned int number)
   *cell->col_number_taken_set_ref |= number_set;
   *cell->tile_number_taken_set_ref |= number_set;
 
-  *cell->row_cell_empty_set_ref &= ~(INDEX_TO_SET(cell->col));
-  if (*cell->row_cell_empty_set_ref == 0)
-    cell->board_ref->row_empty_set &= ~(INDEX_TO_SET(cell->row));
-  
-  *cell->col_cell_empty_set_ref &= ~(INDEX_TO_SET(cell->row));
-  if (*cell->col_cell_empty_set_ref == 0)
-    cell->board_ref->col_empty_set &= ~(INDEX_TO_SET(cell->col));
-  
-  *cell->tile_cell_empty_set_ref &= ~(INDEX_TO_SET(cell->index_in_tile));
-  if (*cell->tile_cell_empty_set_ref == 0)
-    cell->board_ref->tile_empty_set &= ~(INDEX_TO_SET(cell->tile));
+  mark_cell_not_empty(cell);
+  mark_cell_dirty(cell);
 }
 
 
@@ -306,10 +335,12 @@ int reserve_cell(struct sudoku_cell *cell, unsigned int number_set)
 
     if (new_reserved_for_number_set && (cell->reserved_for_number_set != new_reserved_for_number_set)) {
       cell->reserved_for_number_set = new_reserved_for_number_set;
+      mark_cell_dirty(cell);
       changed = 1;
     }
   } else {
     cell->reserved_for_number_set = number_set;
+    mark_cell_dirty(cell);
     changed = 1;
   }
 
@@ -617,6 +648,120 @@ int reserve_cells_with_index_in_col(struct sudoku_cell *possible_cell, unsigned 
   return changed;
 }
 
+
+static
+int propagate_constraints(struct sudoku_board *board)
+{
+  unsigned int row, col, tile, index, row_set, col_set, tile_set, index_set;
+  int round, changed, changed_total;
+  struct sudoku_cell *cell;
+  unsigned int number;
+
+  if (board->debug_level >= 2)
+    printf("Propagate constraints\n");
+
+  changed_total = 0;
+  round = 0;
+  do {
+    if (board->debug_level >= 2)
+      printf("  Round %i\n", round++);
+    changed = 0;
+
+    // Loop over all empty cells on dirty rows by going row by row and col by col
+    row_set = board->row_empty_set & board->row_dirty_set;
+    board->row_dirty_set = 0;
+    while (row_set) {
+      row = get_next_index_from_set(&row_set);
+      col_set = board->row_cell_empty_set[row];
+      while (col_set) {
+        col = get_next_index_from_set(&col_set);
+        cell = &board->cells[row][col];
+        if (board->debug_level >= 4)
+          printf(DINDENT "Empty cell in dirty row [%i,%i]\n", row, col);
+        assert(cell->number == 0);
+        number = get_cell_available_number(cell);
+
+        if (number) {
+          set_cell_number_and_log(cell, number);
+          changed++;
+        }
+      }
+    }
+
+    // Loop over all empty cells on dirty cols by going col by col and row by row
+    col_set = board->col_empty_set & board->col_dirty_set;
+    board->col_dirty_set = 0;
+    while (col_set) {
+      col = get_next_index_from_set(&col_set);
+      row_set = board->col_cell_empty_set[col];
+      while (row_set) {
+        row = get_next_index_from_set(&row_set);
+        cell = &board->cells[row][col];
+        if (board->debug_level >= 4)
+          printf(DINDENT "Empty cell in dirty col [%i,%i]\n", row, col);
+        assert(cell->number == 0);
+        number = get_cell_available_number(cell);
+
+        if (number) {
+          set_cell_number_and_log(cell, number);
+          changed++;
+        }
+      }
+    }
+
+    // Loop over all empty cells on dirty tiles by going tile by tile and index by index
+    tile_set = board->tile_empty_set & board->tile_dirty_set;
+    board->tile_dirty_set = 0;
+    while (tile_set) {
+      tile = get_next_index_from_set(&tile_set);
+      index_set = board->tile_cell_empty_set[tile];
+      while (index_set) {
+        index = get_next_index_from_set(&index_set);
+        cell = board->tile_ref[tile][index];
+        if (board->debug_level >= 4)
+          printf(DINDENT "Empty cell in dirty tile [%i,%i]\n", cell->row, cell->col);
+        assert(cell->number == 0);
+        number = get_cell_available_number(cell);
+
+        if (number) {
+          set_cell_number_and_log(cell, number);
+          changed++;
+        }
+      }
+    }
+
+    changed_total += changed;
+  } while (changed && !is_board_done(board));
+
+  return changed_total;
+}
+
+
+static inline
+int walk_empty_cells(struct sudoku_board *board, int (*func)(struct sudoku_cell *cell))
+{
+  unsigned int row, col, row_set, col_set;
+  int changed;
+  struct sudoku_cell *cell;
+
+  // Loop over all empty cells by going row by row and then col by col
+  changed = 0;
+  row_set = board->row_empty_set;
+  while (row_set) {
+    row = get_next_index_from_set(&row_set);
+    col_set = board->row_cell_empty_set[row];
+    while (col_set) {
+      col = get_next_index_from_set(&col_set);
+      cell = &board->cells[row][col];
+      assert(cell->number == 0);
+      changed += func(cell);
+    }
+  }
+
+  return changed;
+}
+
+
 #if 0
 // This is the old slow solve_possible
 static
@@ -651,6 +796,8 @@ int solve_possible(struct sudoku_board *board)
     }
     changed_total += changed;
   } while (changed && !is_board_done(board));
+
+  mark_board_not_dirty(board);
 
   return changed_total;
 }
@@ -695,6 +842,8 @@ int solve_possible(struct sudoku_board *board)
 
     changed_total += changed;
   } while (changed && !is_board_done(board));
+
+  mark_board_not_dirty(board);
 
   return changed_total;
 }
@@ -1336,7 +1485,7 @@ int solve_eliminate(struct sudoku_board *board)
       if (is_board_done(board))
         break;
       if (this_changed) {
-        changed += this_changed + solve_possible(board);
+        changed += this_changed + propagate_constraints(board);
         if (is_board_done(board))
           break;
       }
@@ -1475,7 +1624,7 @@ int solve_tile_interlock(struct sudoku_board *board)
     if (is_board_done(board))
       break;
     if (this_changed) {
-      changed += this_changed + solve_possible(board);
+      changed += this_changed + propagate_constraints(board);
       if (is_board_done(board))
         break;
       changed += solve_eliminate(board);
@@ -1491,39 +1640,20 @@ int solve_tile_interlock(struct sudoku_board *board)
 
 
 static
-int solve_validate(struct sudoku_board *board)
+int validate_constraints_cell(struct sudoku_cell *cell) 
 {
-  int row, col, round, changed, changed_total;
-  struct sudoku_cell *cell;
-  unsigned int number;
+  return 0;
+}
 
-  if (board->debug_level >= 2)
-    printf("Solve possible\n");
 
-  changed_total = 0;
-  round = 0;
-  do {
-    if (board->debug_level >= 2)
-      printf("  Round %i\n", round++);
+static
+int solve_validate_constraints(struct sudoku_board *board)
+{
+  int changed;
 
-    changed = 0;
-    for (row=0; row<9; row++) {
-      for (col=0; col<9; col++) {
-        cell = &board->cells[row][col];
-        if (cell->number == 0) {
-          number = get_cell_available_number(cell);
+  changed = walk_empty_cells(board, validate_constraints_cell);
 
-          if (number) {
-            set_cell_number_and_log(cell, number);
-            changed++;
-          }
-        }
-      }
-    }
-    changed_total += changed;
-  } while (changed && !is_board_done(board));
-
-  return changed_total;
+  return changed;
 }
 
 

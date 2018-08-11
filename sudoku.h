@@ -74,9 +74,12 @@ struct sudoku_board {
   unsigned int row_cell_empty_set[9]; // Bitset representing the cells without a number (empty) in a row (b0=col0, b1=col1, ...)
   unsigned int col_cell_empty_set[9];
   unsigned int tile_cell_empty_set[9];
-  unsigned int row_empty_set;
+  unsigned int row_empty_set; // Bitset represeting the rows with empty cells in them (b0=row0, b1=row1, ...)
   unsigned int col_empty_set;
   unsigned int tile_empty_set;
+  unsigned int row_dirty_set; // Bitset represeting the rows with dirty cells in them (b0=row0, b1=row1, ...)
+  unsigned int col_dirty_set;
+  unsigned int tile_dirty_set;
   unsigned int undetermined_count;
   int dead;
   unsigned int solutions_count;

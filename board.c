@@ -81,6 +81,10 @@ void init_board(struct sudoku_board *board)
   board->col_empty_set = INDEX_SET_MASK;
   board->tile_empty_set = INDEX_SET_MASK;
 
+  board->row_dirty_set = INDEX_SET_MASK;
+  board->col_dirty_set = INDEX_SET_MASK;
+  board->tile_dirty_set = INDEX_SET_MASK;
+
   board->undetermined_count = (9*9);
   board->dead = 0;
   board->solutions_count = 0;
@@ -136,6 +140,10 @@ void init_board_from_orig(struct sudoku_board *board, struct sudoku_board *orig_
   board->col_empty_set = orig_board->col_empty_set;
   board->tile_empty_set = orig_board->tile_empty_set;
 
+  board->row_dirty_set = orig_board->row_dirty_set;
+  board->col_dirty_set = orig_board->col_dirty_set;
+  board->tile_dirty_set = orig_board->tile_dirty_set;
+
   board->undetermined_count = orig_board->undetermined_count;
   board->dead = orig_board->dead;
   board->solutions_count = 0;
@@ -173,6 +181,10 @@ void copy_board(struct sudoku_board *src, struct sudoku_board *dest)
   dest->row_empty_set = src->row_empty_set;
   dest->col_empty_set = src->col_empty_set;
   dest->tile_empty_set = src->tile_empty_set;
+
+  dest->row_dirty_set = src->row_dirty_set;
+  dest->col_dirty_set = src->col_dirty_set;
+  dest->tile_dirty_set = src->tile_dirty_set;
 
   dest->undetermined_count = src->undetermined_count;
   dest->dead = src->dead;
