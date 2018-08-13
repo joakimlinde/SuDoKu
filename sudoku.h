@@ -56,6 +56,8 @@ struct sudoku_cell {
   unsigned int index_in_tile;
   unsigned int number;
   unsigned int reserved_for_number_set;
+  unsigned int walk_id; // The id of the walk that visited this cell last
+  unsigned int walk_number; // The tentative number for this cell for walk with walk_id. Changes during the walk.
   unsigned int *row_number_taken_set_ref;
   unsigned int *col_number_taken_set_ref;
   unsigned int *tile_number_taken_set_ref;
@@ -80,6 +82,7 @@ struct sudoku_board {
   unsigned int row_dirty_set; // Bitset represeting the rows with dirty cells in them (b0=row0, b1=row1, ...)
   unsigned int col_dirty_set;
   unsigned int tile_dirty_set;
+  unsigned int current_walk_id; // Identifies this current walk. Increments at the begining of a new walk. 
   unsigned int undetermined_count;
   int dead;
   unsigned int solutions_count;
