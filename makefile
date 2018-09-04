@@ -1,5 +1,5 @@
 CC = cc
-CCFLAGS = -Ofast -Wall -DNDEBUG
+CCFLAGS = -Ofast -Wall -Wno-unused-function
 EXE = sudoku
 OBJS = main.o board.o solve.o test.o
 
