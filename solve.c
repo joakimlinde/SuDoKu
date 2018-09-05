@@ -23,6 +23,8 @@
 
 #define DINDENT "      "
 
+#define MAX_WALK_HOP_COUNT 7
+
 static unsigned int available_set_to_number[NUMBER_TO_SET(10)+1];
 static unsigned int bit_count[NUMBER_TO_SET(10)+1];
 static struct {
@@ -46,6 +48,18 @@ static const unsigned int index_col_mask[] = {
   0x049, // 001 001 001
   0x092, // 010 010 010
   0x124  // 100 100 100
+};
+
+static const unsigned int row_to_tile_mask[] = {
+  0x007, 0x007, 0x007, // 000 000 111
+  0x038, 0x038, 0x038, // 000 111 000
+  0x1C0, 0x1C0, 0x1C0  // 111 000 000
+};
+
+static const unsigned int col_to_tile_mask[] = {
+  0x007, 0x007, 0x007, // 000 000 111
+  0x038, 0x038, 0x038, // 000 111 000
+  0x1C0, 0x1C0, 0x1C0  // 111 000 000
 };
 
 static void print_number_set(unsigned int number_set, const char *postfix);
@@ -757,6 +771,101 @@ int for_each_empty_cell(struct sudoku_board *board, int (*func)(struct sudoku_ce
       cell = &board->cells[row][col];
       assert(cell->number == 0);
       changed += func(cell);
+    }
+  }
+
+  return changed;
+}
+
+
+static inline
+int for_each_empty_dependent_cell(struct sudoku_cell *cell,
+                                  int (*func)(struct sudoku_cell *cell, struct sudoku_cell *from_cell))
+{
+  unsigned row, col, tile, index, row_set, col_set, index_set;
+  struct sudoku_board *board;
+  struct sudoku_cell *from_cell;
+  int changed;
+
+  changed = 0;
+  board = cell->board_ref;
+  from_cell = cell; // We are looking at other cells form the perspective of this cell (from_cell)
+
+  // Loop over all empty cells on the same row as cell but not cell itself
+  row = from_cell->row;
+  col_set = board->row_cell_empty_set[row] & ~(INDEX_TO_SET(from_cell->col));
+  while (col_set) {
+    col = get_next_index_from_set(&col_set);
+    cell = &board->cells[row][col];
+    changed += func(cell, from_cell);
+  }
+
+  // Loop over all empty cells in the same col as cell but not cell itself
+  col = from_cell->col;
+  row_set = board->col_cell_empty_set[col] & ~(INDEX_TO_SET(from_cell->row));
+  while (row_set) {
+    row = get_next_index_from_set(&row_set);
+    cell = &board->cells[row][col];
+    changed += func(cell, from_cell);
+  }
+
+  // Loop over all empty cells in the same tile as cell but not cell itself
+  tile = from_cell->tile;
+  index_set = board->tile_cell_empty_set[tile] & ~(INDEX_TO_SET(from_cell->index_in_tile));
+  while (index_set) {
+    index = get_next_index_from_set(&index_set);
+    cell = board->tile_ref[tile][index];
+    // Make sure we haven't already covered this cell in row and col above
+    if ((cell->row != from_cell->row) && (cell->col != from_cell->col))
+      changed += func(cell, from_cell);
+  }
+
+  return changed;
+}
+
+
+static inline
+int for_each_interdependent_empty_cell(struct sudoku_cell *cell, struct sudoku_cell *from_cell,
+                                       int (*func)(struct sudoku_cell *cell, struct sudoku_cell *from_cell))
+{
+  unsigned row, col, tile, index, row_set, col_set, index_set;
+  struct sudoku_board *board;
+  struct sudoku_cell *next_cell;
+  int changed;
+
+  changed = 0;
+  board = cell->board_ref;
+
+  // Loop over all empty cells on the same row as cell but not the tile of the cell itself
+  row = cell->row;
+  if (!from_cell || (from_cell->row != row)) {
+    col_set = board->row_cell_empty_set[row] & ~(col_to_tile_mask[cell->col]);
+    while (col_set) {
+      col = get_next_index_from_set(&col_set);
+      next_cell = &board->cells[row][col];
+      changed += func(next_cell, cell);
+    }
+  }
+
+  // Loop over all empty cells in the same col as cell but not the tile of the cell itself
+  col = cell->col;
+  if (!from_cell || (from_cell->col != col)) {
+    row_set = board->col_cell_empty_set[col] & ~(row_to_tile_mask[cell->row]);
+    while (row_set) {
+      row = get_next_index_from_set(&row_set);
+      next_cell = &board->cells[row][col];
+      changed += func(next_cell, cell);
+    }
+  }
+
+  // Loop over all empty cells in the same tile as cell but not cell itself
+  tile = cell->tile;
+  if (!from_cell || (from_cell->tile != tile)) {
+    index_set = board->tile_cell_empty_set[tile] & ~(INDEX_TO_SET(cell->index_in_tile));
+    while (index_set) {
+      index = get_next_index_from_set(&index_set);
+      next_cell = board->tile_ref[tile][index];
+      changed += func(next_cell, cell);
     }
   }
 
@@ -1640,12 +1749,12 @@ int solve_tile_interlock(struct sudoku_board *board)
   return total_changed;
 }
 
-
+#if 0
 static bool validate_dependent_cells(struct sudoku_cell *from_cell);
 
 // Answer the question: Does cell have options given from_cell is filled with walk_number?
 static
-bool validate_constraints_for_cell(struct sudoku_cell *cell, struct sudoku_cell *from_cell)
+bool validate_constraints_for_cell1(struct sudoku_cell *cell, struct sudoku_cell *from_cell)
 {
   unsigned int number_set, validated_number_set;
   struct sudoku_board *board;
@@ -1686,69 +1795,87 @@ bool validate_constraints_for_cell(struct sudoku_cell *cell, struct sudoku_cell 
   // We good if we have at least one validated number for this cell
   return validated_number_set;
 }
+#endif 
 
 
-// Answer the question: Is the walk_number for from_cell possible?
 static
-bool validate_dependent_cells(struct sudoku_cell *from_cell)
-{
-  unsigned row, col, tile, index, row_set, col_set, index_set;
-  struct sudoku_board *board;
-  struct sudoku_cell *cell;
-  bool result;
-
-  result = true;
-  board = from_cell->board_ref;
-
-  // Loop over all empty cells on the same row as cell except cell
-  row = from_cell->row;
-  col_set = board->row_cell_empty_set[row] & ~(INDEX_TO_SET(from_cell->col));
-  while (col_set) {
-    col = get_next_index_from_set(&col_set);
-    cell = &board->cells[row][col];
-    result &= validate_constraints_for_cell(cell, from_cell);
+int analyze_interdependent_empty_cell_loop(struct sudoku_cell *cell) {
+  return 1;
+  if (cell->board_ref->debug_level >= 4) {
+    printf(DINDENT "Loop: ");
+    do {
+      printf("[%i,%i] ", cell->row, cell->col);
+      cell = cell->walk_next_cell;
+    } while (cell->walk_hop_count != 0);
+    printf("\n");
   }
-
-  // Loop over all empty cells in the same col as cell except cell
-  col = from_cell->col;
-  row_set = board->col_cell_empty_set[col] & ~(INDEX_TO_SET(from_cell->row));
-  while (row_set) {
-    row = get_next_index_from_set(&row_set);
-    cell = &board->cells[row][col];
-    result &= validate_constraints_for_cell(cell, from_cell);
-  }
-
-  // Loop over all empty cells in the same tile as cell except cell
-  tile = from_cell->tile;
-  index_set = board->tile_cell_empty_set[tile] & ~(INDEX_TO_SET(from_cell->index_in_tile));
-  while (index_set) {
-    index = get_next_index_from_set(&index_set);
-    cell = board->tile_ref[tile][index];
-    if ((cell->row != from_cell->row) && (cell->col != from_cell->col)) {
-      //result &= validate_constraints_for_cell(cell, from_cell);
-    }
-  }
-
-  return result;
+  return 1;
 }
 
 
 static
-int validate_constraints_for_start_cell(struct sudoku_cell *cell) 
-{
-  unsigned int number_set, possible_number_set, reserve_number_set;
+int recursive_walk_to_find_loops(struct sudoku_cell *cell, struct sudoku_cell *from_cell) {
   struct sudoku_board *board;
   int changed;
-  bool result;
 
+  board = from_cell->board_ref;
+  if (cell->walk_next_cell) {
+    if (cell->walk_hop_count == 0) {
+      // We have reached the start so we have a loop - close the loop & analyze
+      from_cell->walk_next_cell = cell; 
+      changed = analyze_interdependent_empty_cell_loop(cell);
+      from_cell->walk_next_cell = NULL; 
+      return changed;
+    } else {
+      // This cell is already in our walk path and on our call stack - ignore it
+     return 0;
+    }
+  }
+
+  if (from_cell->walk_hop_count == MAX_WALK_HOP_COUNT) {
+    // We have walked too far - time to return
+    return 0;
+  }
+
+  // This is a cell we haven't visited so let's explore it - recurse!
+  from_cell->walk_next_cell = cell; 
+  cell->walk_hop_count = from_cell->walk_hop_count+1;
+  changed = for_each_interdependent_empty_cell(cell, from_cell, recursive_walk_to_find_loops);
+  cell->walk_hop_count = 0;
+  assert(cell->walk_next_cell == 0);
+  from_cell->walk_next_cell = NULL; 
+
+  return changed;
+}
+
+
+static
+int validate_constraints_for_cell(struct sudoku_cell *cell) 
+{
+  struct sudoku_board *board;
+  int changed;
+
+  changed = 0;
   board = cell->board_ref;
-  cell->walk_id = ++board->current_walk_id; // It's ok if the walk id wraps around
-
   if (board->debug_level >= 2) {
     printf("  Cell [%i,%i] with ", cell->row, cell->col);
     print_number_set(get_cell_possible_number_set(cell), "\n");
   }
 
+  assert(cell->walk_next_cell == NULL);
+  assert(cell->walk_hop_count == 0);
+
+  // Find any loops that involves this starting cell
+  changed = for_each_interdependent_empty_cell(cell, NULL, recursive_walk_to_find_loops);
+
+  if (changed) {
+    // We found some loops
+    if (board->debug_level >= 4) {
+      printf(DINDENT "Found %i loop(s)\n", changed);
+    }
+  }
+
+#if 0
   changed = 0;
   reserve_number_set = 0;
   possible_number_set = get_cell_possible_number_set(cell);
@@ -1778,6 +1905,7 @@ int validate_constraints_for_start_cell(struct sudoku_cell *cell)
     reserve_cell_and_log(cell, reserve_number_set, "validate_constraints_cell");
     changed++;
   }
+#endif 
 
   return changed;
 }
@@ -1791,7 +1919,7 @@ int solve_validate_constraints(struct sudoku_board *board)
   if (board->debug_level >= 2)
     printf("Solve validate constraints\n");
 
-  changed = for_each_empty_cell(board, validate_constraints_for_start_cell);
+  changed = for_each_empty_cell(board, validate_constraints_for_cell);
 
   return changed;
 }

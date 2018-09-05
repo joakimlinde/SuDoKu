@@ -57,14 +57,15 @@ void init_board(struct sudoku_board *board)
       cell->index_in_tile = tile_ref_next_free_idx[cell->tile]++;
       cell->number = 0;
       cell->reserved_for_number_set = 0;
-      cell->walk_id = 0;
-      cell->walk_number = 0;
       cell->row_number_taken_set_ref = &board->row_number_taken_set[row];
       cell->col_number_taken_set_ref = &board->col_number_taken_set[col];
       cell->tile_number_taken_set_ref = &board->tile_number_taken_set[rowcol_to_tile[row][col]];
       cell->row_cell_empty_set_ref = &board->row_cell_empty_set[row];
       cell->col_cell_empty_set_ref = &board->col_cell_empty_set[col];
       cell->tile_cell_empty_set_ref = &board->tile_cell_empty_set[rowcol_to_tile[row][col]];
+      cell->walk_next_cell = NULL;
+      cell->walk_hop_count = 0;
+      cell->walk_number = 0;
 
       board->tile_ref[cell->tile][cell->index_in_tile] = cell;
     }
@@ -118,14 +119,15 @@ void init_board_from_orig(struct sudoku_board *board, struct sudoku_board *orig_
       cell->index_in_tile = tile_ref_next_free_idx[cell->tile]++;
       cell->number = orig_cell->number;
       cell->reserved_for_number_set = orig_cell->reserved_for_number_set;
-      cell->walk_id = orig_cell->walk_id;
-      cell->walk_number = orig_cell->walk_number;
       cell->row_number_taken_set_ref = &board->row_number_taken_set[row];
       cell->col_number_taken_set_ref = &board->col_number_taken_set[col];
       cell->tile_number_taken_set_ref = &board->tile_number_taken_set[rowcol_to_tile[row][col]];
       cell->row_cell_empty_set_ref = &board->row_cell_empty_set[row];
       cell->col_cell_empty_set_ref = &board->col_cell_empty_set[col];
       cell->tile_cell_empty_set_ref = &board->tile_cell_empty_set[rowcol_to_tile[row][col]];
+      cell->walk_next_cell = NULL;
+      cell->walk_hop_count = 0;
+      cell->walk_number = 0;
 
       board->tile_ref[cell->tile][cell->index_in_tile] = cell;
     }
@@ -170,8 +172,6 @@ void copy_board(struct sudoku_board *src, struct sudoku_board *dest)
       
       dest_cell->number = src_cell->number;
       dest_cell->reserved_for_number_set = src_cell->reserved_for_number_set;
-      dest_cell->walk_id = src_cell->walk_id;
-      dest_cell->walk_number = src_cell->walk_number;      
     }
   }
 
