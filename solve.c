@@ -23,7 +23,8 @@
 
 #define DINDENT "      "
 
-#define MAX_WALK_HOP_COUNT 7
+//#define MAX_WALK_HOP_COUNT 7
+#define MAX_WALK_HOP_COUNT (9*9)
 
 static unsigned int available_set_to_number[NUMBER_TO_SET(10)+1];
 static unsigned int bit_count[NUMBER_TO_SET(10)+1];
@@ -1779,12 +1780,6 @@ int analyze_interdependent_loop(struct sudoku_cell *cell) {
   struct stack *sp; // stack pointer
   struct stack *bsp; // base stack pointer
   struct stack *tsp; // top stack pointer
-  enum {
-    state_goto_next_level,
-    state_goto_previous_level,
-    state_at_level,
-    state_done,
-  } state;
   unsigned int idx;
   int changed;
   bool dead;
@@ -1813,53 +1808,33 @@ int analyze_interdependent_loop(struct sudoku_cell *cell) {
     bsp->number = get_next_index_from_set(&bsp->remaining_number_set);
     bsp->number_as_set = NUMBER_TO_SET(bsp->number);
 
-    dead = true;
-    sp = bsp;
-    state = state_goto_next_level;
-    while (state != state_done) {
-      switch (state) {
-        case state_goto_next_level:
-          if (sp == tsp) {
-            // We have reached the top of the stack and are done - are we dead?
-            if (tsp->number != bsp->number) {
-              dead = false;
-              state = state_done;
-            } else {
-              state = state_at_level;
-            }
-          } else {
-            // Move to the next level and see if we have any options here
-            sp++;
-            sp->remaining_number_set = (sp->possible_number_set & ~(sp-1)->number_as_set);
-            if (sp->remaining_number_set == 0)
-              state = state_goto_previous_level;
-            else
-              state = state_at_level;
+    sp = bsp+1;
+    sp->remaining_number_set = (sp->possible_number_set & ~bsp->number_as_set);
+    while (true) {
+      // Do we have any options to explore at this level? 
+      // If so, explore them. If not, go back to previous level.
+      if (sp->remaining_number_set) {
+        sp->number = get_next_index_from_set(&sp->remaining_number_set);
+        sp->number_as_set = NUMBER_TO_SET(sp->number);
+        // Goto next level
+        if (sp == tsp) {
+          // We have reached the top of the stack and are done - are we dead?
+          if (tsp->number != bsp->number) {
+            dead = false;
+            break;
           }
+        } else {
+          // Move to the next level and see if we have any options here
+          sp++;
+          sp->remaining_number_set = (sp->possible_number_set & ~(sp-1)->number_as_set);
+        }
+      } else {
+        // Goto previous level
+        if (--sp == bsp) {
+          // We are back at base level and did not finish 
+          dead = true;
           break;
-
-        case state_at_level:
-          if (sp->remaining_number_set) {
-            sp->number = get_next_index_from_set(&sp->remaining_number_set);
-            sp->number_as_set = NUMBER_TO_SET(sp->number);
-            state = state_goto_next_level;
-          } else {
-            state = state_goto_previous_level;
-          }
-          break;
-
-        case state_goto_previous_level:
-          if (--sp == bsp) {
-            // We are back at base level and did not finish 
-            dead = true;
-            state = state_done;
-          } else {
-            state = state_at_level;
-          }
-          break;
-
-        default:
-          break;
+        }
       }
     }
 
@@ -2051,8 +2026,8 @@ int solve(struct sudoku_board *board)
   if (!is_board_done(board))
     solve_validate_constraints(board);
 
-  //if (!is_board_done(board))
-     //solve_hidden(board);
+  if (!is_board_done(board))
+    solve_hidden(board);
 
   solutions_count = board->solutions_count;
   if (board->undetermined_count == 0)
