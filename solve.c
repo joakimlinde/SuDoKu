@@ -769,8 +769,8 @@ int for_each_empty_cell(struct sudoku_board *board, int (*func)(struct sudoku_ce
     while (col_set) {
       col = get_next_index_from_set(&col_set);
       cell = &board->cells[row][col];
-      assert(cell->number == 0);
-      changed += func(cell);
+      if (cell->number == 0)
+        changed += func(cell);
     }
   }
 
@@ -797,7 +797,8 @@ int for_each_empty_dependent_cell(struct sudoku_cell *cell,
   while (col_set) {
     col = get_next_index_from_set(&col_set);
     cell = &board->cells[row][col];
-    changed += func(cell, from_cell);
+    if (cell->number == 0)
+      changed += func(cell, from_cell);
   }
 
   // Loop over all empty cells in the same col as cell but not cell itself
@@ -806,7 +807,8 @@ int for_each_empty_dependent_cell(struct sudoku_cell *cell,
   while (row_set) {
     row = get_next_index_from_set(&row_set);
     cell = &board->cells[row][col];
-    changed += func(cell, from_cell);
+    if (cell->number == 0)
+      changed += func(cell, from_cell);
   }
 
   // Loop over all empty cells in the same tile as cell but not cell itself
@@ -816,7 +818,7 @@ int for_each_empty_dependent_cell(struct sudoku_cell *cell,
     index = get_next_index_from_set(&index_set);
     cell = board->tile_ref[tile][index];
     // Make sure we haven't already covered this cell in row and col above
-    if ((cell->row != from_cell->row) && (cell->col != from_cell->col))
+    if ((cell->row != from_cell->row) && (cell->col != from_cell->col) && (cell->number == 0))
       changed += func(cell, from_cell);
   }
 
@@ -843,7 +845,8 @@ int for_each_interdependent_empty_cell(struct sudoku_cell *cell, struct sudoku_c
     while (col_set) {
       col = get_next_index_from_set(&col_set);
       next_cell = &board->cells[row][col];
-      changed += func(next_cell, cell);
+      if (next_cell->number == 0)
+        changed += func(next_cell, cell);
     }
   }
 
@@ -854,7 +857,8 @@ int for_each_interdependent_empty_cell(struct sudoku_cell *cell, struct sudoku_c
     while (row_set) {
       row = get_next_index_from_set(&row_set);
       next_cell = &board->cells[row][col];
-      changed += func(next_cell, cell);
+      if (next_cell->number == 0)
+        changed += func(next_cell, cell);
     }
   }
 
@@ -865,7 +869,8 @@ int for_each_interdependent_empty_cell(struct sudoku_cell *cell, struct sudoku_c
     while (index_set) {
       index = get_next_index_from_set(&index_set);
       next_cell = board->tile_ref[tile][index];
-      changed += func(next_cell, cell);
+      if (next_cell->number == 0)
+        changed += func(next_cell, cell);
     }
   }
 
@@ -1749,67 +1754,124 @@ int solve_tile_interlock(struct sudoku_board *board)
   return total_changed;
 }
 
-#if 0
-static bool validate_dependent_cells(struct sudoku_cell *from_cell);
 
-// Answer the question: Does cell have options given from_cell is filled with walk_number?
+static 
+void print_cell_loop(struct sudoku_cell *cell) {
+  printf(DINDENT "Loop: ");
+  do {
+    printf("[%i,%i]=", cell->row, cell->col);
+    print_number_set(get_cell_possible_number_set(cell), " ");
+    cell = cell->walk_next_cell;
+  } while (cell->walk_hop_count != 0);
+  printf("\n");
+}
+
+
 static
-bool validate_constraints_for_cell1(struct sudoku_cell *cell, struct sudoku_cell *from_cell)
-{
-  unsigned int number_set, validated_number_set;
-  struct sudoku_board *board;
-
-  // Have we been here before?
-  if (cell->walk_id == from_cell->walk_id) {
-    // If so, make sure the walk_numbers are compatible, meaning different
-    return (cell->walk_number != from_cell->walk_number);
-  }
-
-  board = from_cell->board_ref;
-  if (board->debug_level >= 4) {
-    printf(DINDENT "Validate constraints for cell [%i,%i] = ", cell->row, cell->col);
-    print_number_set(get_cell_possible_number_set(cell), "\n");
-  }
-
-  // This is a cell we haven't been to before, mark it!
-  cell->walk_id = from_cell->walk_id;
-
-  // Validate that we have at least one possible number outside the from_cell walk_number
-  validated_number_set = 0;
-  number_set = get_cell_possible_number_set(cell) & ~(NUMBER_TO_SET(from_cell->walk_number));
-  while (number_set) {
-    cell->walk_number = get_next_index_from_set(&number_set);
+int analyze_interdependent_loop(struct sudoku_cell *cell) {
+  struct sudoku_cell *tmp_cell;
+  struct stack {
+    unsigned int number;
+    unsigned int number_as_set;
+    unsigned int possible_number_set;
+    unsigned int remaining_number_set;
+  } stack[MAX_WALK_HOP_COUNT+1];
+  struct stack *sp; // stack pointer
+  struct stack *bsp; // base stack pointer
+  struct stack *tsp; // top stack pointer
+  enum {
+    state_goto_next_level,
+    state_goto_previous_level,
+    state_at_level,
+    state_done,
+  } state;
+  unsigned int idx;
+  int changed;
+  bool dead;
   
-    if (validate_dependent_cells(cell)) {
-      // This number is valid so record it
-      validated_number_set |= NUMBER_TO_SET(cell->walk_number); 
-    } else {
-      if (board->debug_level >= 4)
-        printf(DINDENT "  number %i not ok\n", cell->walk_number);
+  changed = 0;
+  if (cell->board_ref->debug_level >= 4) 
+    print_cell_loop(cell);
+
+  // Build help stack data
+  idx = 0;
+  bsp = &stack[0];
+  sp = bsp;
+  tmp_cell = cell;
+  do {
+    assert(idx == tmp_cell->walk_hop_count);
+    assert(idx <= MAX_WALK_HOP_COUNT);
+    (sp++)->possible_number_set = get_cell_possible_number_set(tmp_cell);
+    idx++;
+    tmp_cell = tmp_cell->walk_next_cell;
+  } while (tmp_cell != cell);
+  tsp = sp-1; 
+
+  // Go though all possible number for [0] and see if we can get them all to work
+  bsp->remaining_number_set = bsp->possible_number_set;
+  while (bsp->remaining_number_set) {
+    bsp->number = get_next_index_from_set(&bsp->remaining_number_set);
+    bsp->number_as_set = NUMBER_TO_SET(bsp->number);
+
+    dead = true;
+    sp = bsp;
+    state = state_goto_next_level;
+    while (state != state_done) {
+      switch (state) {
+        case state_goto_next_level:
+          if (sp == tsp) {
+            // We have reached the top of the stack and are done - are we dead?
+            if (tsp->number != bsp->number) {
+              dead = false;
+              state = state_done;
+            } else {
+              state = state_at_level;
+            }
+          } else {
+            // Move to the next level and see if we have any options here
+            sp++;
+            sp->remaining_number_set = (sp->possible_number_set & ~(sp-1)->number_as_set);
+            if (sp->remaining_number_set == 0)
+              state = state_goto_previous_level;
+            else
+              state = state_at_level;
+          }
+          break;
+
+        case state_at_level:
+          if (sp->remaining_number_set) {
+            sp->number = get_next_index_from_set(&sp->remaining_number_set);
+            sp->number_as_set = NUMBER_TO_SET(sp->number);
+            state = state_goto_next_level;
+          } else {
+            state = state_goto_previous_level;
+          }
+          break;
+
+        case state_goto_previous_level:
+          if (--sp == bsp) {
+            // We are back at base level and did not finish 
+            dead = true;
+            state = state_done;
+          } else {
+            state = state_at_level;
+          }
+          break;
+
+        default:
+          break;
+      }
+    }
+
+    if (dead) {
+      // No path found for number - number is not possible - remove it!
+      changed += reserve_cell_and_log(cell, (bsp->possible_number_set & ~bsp->number_as_set), 
+                                      "analyze_interdependent_loop"); 
+      bsp->possible_number_set = get_cell_possible_number_set(cell);
     }
   }
 
-  // We are done with this cell for this time
-  cell->walk_id = 0;
-
-  // We good if we have at least one validated number for this cell
-  return validated_number_set;
-}
-#endif 
-
-
-static
-int analyze_interdependent_empty_cell_loop(struct sudoku_cell *cell) {
-  return 1;
-  if (cell->board_ref->debug_level >= 4) {
-    printf(DINDENT "Loop: ");
-    do {
-      printf("[%i,%i] ", cell->row, cell->col);
-      cell = cell->walk_next_cell;
-    } while (cell->walk_hop_count != 0);
-    printf("\n");
-  }
-  return 1;
+  return changed;
 }
 
 
@@ -1823,7 +1885,7 @@ int recursive_walk_to_find_loops(struct sudoku_cell *cell, struct sudoku_cell *f
     if (cell->walk_hop_count == 0) {
       // We have reached the start so we have a loop - close the loop & analyze
       from_cell->walk_next_cell = cell; 
-      changed = analyze_interdependent_empty_cell_loop(cell);
+      changed = analyze_interdependent_loop(cell);
       from_cell->walk_next_cell = NULL; 
       return changed;
     } else {
@@ -1839,7 +1901,7 @@ int recursive_walk_to_find_loops(struct sudoku_cell *cell, struct sudoku_cell *f
 
   // This is a cell we haven't visited so let's explore it - recurse!
   from_cell->walk_next_cell = cell; 
-  cell->walk_hop_count = from_cell->walk_hop_count+1;
+  cell->walk_hop_count = from_cell->walk_hop_count + 1;
   changed = for_each_interdependent_empty_cell(cell, from_cell, recursive_walk_to_find_loops);
   cell->walk_hop_count = 0;
   assert(cell->walk_next_cell == 0);
@@ -1868,44 +1930,8 @@ int validate_constraints_for_cell(struct sudoku_cell *cell)
   // Find any loops that involves this starting cell
   changed = for_each_interdependent_empty_cell(cell, NULL, recursive_walk_to_find_loops);
 
-  if (changed) {
-    // We found some loops
-    if (board->debug_level >= 4) {
-      printf(DINDENT "Found %i loop(s)\n", changed);
-    }
-  }
-
-#if 0
-  changed = 0;
-  reserve_number_set = 0;
-  possible_number_set = get_cell_possible_number_set(cell);
-  number_set = possible_number_set;
-  while (number_set) {
-    cell->walk_number = get_next_index_from_set(&number_set);
-
-    result = validate_dependent_cells(cell);
-    if (result) {
-      // This number is ok so reserve it
-      reserve_number_set |= NUMBER_TO_SET(cell->walk_number); 
-      if (board->debug_level >= 2)
-        printf(DINDENT "  number %i ok\n", cell->walk_number);
-    } else {
-      if (board->debug_level >= 2)
-        printf(DINDENT "  number %i not ok\n", cell->walk_number);
-    }
-  }
-
-  if (reserve_number_set == 0) {
-    // Board is dead
-    set_board_dead(board);
-    return 0;
-  }
-
-  if (possible_number_set != reserve_number_set) {
-    reserve_cell_and_log(cell, reserve_number_set, "validate_constraints_cell");
-    changed++;
-  }
-#endif 
+  if (changed)
+    changed += propagate_constraints(board);
 
   return changed;
 }
@@ -1914,14 +1940,24 @@ int validate_constraints_for_cell(struct sudoku_cell *cell)
 static
 int solve_validate_constraints(struct sudoku_board *board)
 {
-  int changed;
+  int changed, total_changed;
 
   if (board->debug_level >= 2)
     printf("Solve validate constraints\n");
 
-  changed = for_each_empty_cell(board, validate_constraints_for_cell);
+  total_changed = 0;
+  do {
+    changed = for_each_empty_cell(board, validate_constraints_for_cell);
+    total_changed += changed;
 
-  return changed;
+    if (changed && !is_board_done(board)) {
+      changed = solve_eliminate(board);
+      total_changed += changed;
+    }
+    
+  } while (changed);
+
+  return total_changed;
 }
 
 
@@ -2039,7 +2075,7 @@ void print_number_set(unsigned int number_set, const char *postfix)
       printf(" %i", number);
   }
   if (postfix)
-    printf(" }  %s", postfix);
+    printf(" } %s", postfix);
   else
     printf(" }");
 }
