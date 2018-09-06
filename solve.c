@@ -1749,7 +1749,7 @@ int solve_tile_interlock(struct sudoku_board *board)
     }
 
     total_changed += changed;
-  } while ((changed > 0) && (!is_board_done(board)));
+  } while (changed && !is_board_done(board));
 
   return total_changed;
 }
@@ -1948,14 +1948,12 @@ int solve_validate_constraints(struct sudoku_board *board)
   total_changed = 0;
   do {
     changed = for_each_empty_cell(board, validate_constraints_for_cell);
-    total_changed += changed;
 
-    if (changed && !is_board_done(board)) {
-      changed = solve_eliminate(board);
-      total_changed += changed;
-    }
-    
-  } while (changed);
+    if (changed && !is_board_done(board))
+      changed += solve_eliminate(board);
+
+    total_changed += changed;
+  } while (changed && !is_board_done(board));
 
   return total_changed;
 }
@@ -2053,8 +2051,8 @@ int solve(struct sudoku_board *board)
   if (!is_board_done(board))
     solve_validate_constraints(board);
 
-  if (!is_board_done(board))
-     solve_hidden(board);
+  //if (!is_board_done(board))
+     //solve_hidden(board);
 
   solutions_count = board->solutions_count;
   if (board->undetermined_count == 0)
