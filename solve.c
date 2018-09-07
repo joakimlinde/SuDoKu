@@ -24,7 +24,7 @@
 #define DINDENT "      "
 
 //#define MAX_WALK_HOP_COUNT 7
-#define MAX_WALK_HOP_COUNT (9*9)
+#define MAX_WALK_HOP_COUNT (80)
 
 static unsigned int available_set_to_number[NUMBER_TO_SET(10)+1];
 static unsigned int bit_count[NUMBER_TO_SET(10)+1];
@@ -145,10 +145,10 @@ int is_board_solved(struct sudoku_board *board)
 
 
 static inline
-void set_board_dead(struct sudoku_board *board)
+void set_board_dead(struct sudoku_board *board, const char *func_name)
 {
   if (board->debug_level)
-    printf("Board is declared dead!\n");
+    printf("Board is declared dead! (function: %s)\n", func_name);
 
   board->dead = 1;
 }
@@ -241,7 +241,7 @@ struct sudoku_cell* find_cell_with_lowest_availability_count(struct sudoku_board
         cell_bit_count = bit_count[get_cell_possible_number_set(cell)];
         if (cell_bit_count == 0) {
           // Board is dead
-          set_board_dead(board);
+          set_board_dead(board, __func__);
           return NULL;
         } else if (cell_bit_count < lowest_available_count) {
           lowest_available_count = cell_bit_count;
@@ -267,9 +267,9 @@ void set_cell_number(struct sudoku_cell *cell, unsigned int number)
   assert(number);
 
   cell->number = number;
-  cell->reserved_for_number_set = 0;
 
   number_set = NUMBER_TO_SET(number);
+  cell->reserved_for_number_set = number_set;
   *cell->row_number_taken_set_ref |= number_set;
   *cell->col_number_taken_set_ref |= number_set;
   *cell->tile_number_taken_set_ref |= number_set;
@@ -309,10 +309,11 @@ void handle_bad_reserve_cell(struct sudoku_cell *cell, unsigned int number_set)
     printf("ERROR: reserve_cell([%i,%i] req: ", cell->row, cell->col);
     print_number_set(number_set, "existing: ");
     print_number_set(cell->reserved_for_number_set, "available: ");
-    print_number_set(available_set, "\n");
+    print_number_set(available_set, NULL);
+    printf(" number: %i\n", cell->number);
     assert(0);
   }
-  set_board_dead(cell->board_ref);
+  set_board_dead(cell->board_ref, __func__);
 }
 
 
@@ -334,6 +335,12 @@ int reserve_cell(struct sudoku_cell *cell, unsigned int number_set)
   taken_set |= *cell->tile_number_taken_set_ref;
 
   available_set = NUMBER_TAKEN_TO_AVAILABLE_SET(taken_set);
+
+  // Make sure it is available to be reserved
+  if (cell->number) {
+    handle_bad_reserve_cell(cell, number_set);
+    return 0;
+  }
 
   // Make sure you only reserve numbers that are available
   if (((number_set & available_set) == 0) ||
@@ -374,6 +381,12 @@ int reserve_cell_and_log(struct sudoku_cell *cell, unsigned int number_set, cons
   if ((board->debug_level >= 3) && (func_name)) {     
     printf(DINDENT "%s: [%i,%i] = ", func_name, cell->row, cell->col);
     print_number_set(number_set, "\n");
+  }
+
+  // Check: Trough logic we have reached the conclusion that no numbers are available for this cell - bad board! 
+  if (number_set == 0) {
+    set_board_dead(board, func_name);
+    return 0;
   }
 
   changed = reserve_cell(cell, number_set);
@@ -780,7 +793,7 @@ int for_each_empty_cell(struct sudoku_board *board, int (*func)(struct sudoku_ce
 
 
 static inline
-int for_each_empty_dependent_cell(struct sudoku_cell *cell,
+int for_each_dependent_empty_cell(struct sudoku_cell *cell,
                                   int (*func)(struct sudoku_cell *cell, struct sudoku_cell *from_cell))
 {
   unsigned row, col, tile, index, row_set, col_set, index_set;
@@ -792,9 +805,9 @@ int for_each_empty_dependent_cell(struct sudoku_cell *cell,
   board = cell->board_ref;
   from_cell = cell; // We are looking at other cells form the perspective of this cell (from_cell)
 
-  // Loop over all empty cells on the same row as cell but not cell itself
+  // Loop over all empty cells on the same row as cell but not the tile of the cell itself
   row = from_cell->row;
-  col_set = board->row_cell_empty_set[row] & ~(INDEX_TO_SET(from_cell->col));
+  col_set = board->row_cell_empty_set[row] & ~(col_to_tile_mask[cell->col]);
   while (col_set) {
     col = get_next_index_from_set(&col_set);
     cell = &board->cells[row][col];
@@ -802,9 +815,9 @@ int for_each_empty_dependent_cell(struct sudoku_cell *cell,
       changed += func(cell, from_cell);
   }
 
-  // Loop over all empty cells in the same col as cell but not cell itself
+  // Loop over all empty cells on the same col as cell but not the tile of the cell itself
   col = from_cell->col;
-  row_set = board->col_cell_empty_set[col] & ~(INDEX_TO_SET(from_cell->row));
+  row_set = board->col_cell_empty_set[col] & ~(row_to_tile_mask[cell->row]);
   while (row_set) {
     row = get_next_index_from_set(&row_set);
     cell = &board->cells[row][col];
@@ -818,8 +831,7 @@ int for_each_empty_dependent_cell(struct sudoku_cell *cell,
   while (index_set) {
     index = get_next_index_from_set(&index_set);
     cell = board->tile_ref[tile][index];
-    // Make sure we haven't already covered this cell in row and col above
-    if ((cell->row != from_cell->row) && (cell->col != from_cell->col) && (cell->number == 0))
+    if (cell->number == 0)
       changed += func(cell, from_cell);
   }
 
@@ -828,7 +840,7 @@ int for_each_empty_dependent_cell(struct sudoku_cell *cell,
 
 
 static inline
-int for_each_interdependent_empty_cell(struct sudoku_cell *cell, struct sudoku_cell *from_cell,
+int for_each_dependent_empty_from_cell(struct sudoku_cell *cell, struct sudoku_cell *from_cell,
                                        int (*func)(struct sudoku_cell *cell, struct sudoku_cell *from_cell))
 {
   unsigned row, col, tile, index, row_set, col_set, index_set;
@@ -841,84 +853,36 @@ int for_each_interdependent_empty_cell(struct sudoku_cell *cell, struct sudoku_c
 
   // Loop over all empty cells on the same row as cell but not the tile of the cell itself
   row = cell->row;
-  if (!from_cell || (from_cell->row != row)) {
-    col_set = board->row_cell_empty_set[row] & ~(col_to_tile_mask[cell->col]);
-    while (col_set) {
-      col = get_next_index_from_set(&col_set);
-      next_cell = &board->cells[row][col];
-      if (next_cell->number == 0)
-        changed += func(next_cell, cell);
-    }
+  col_set = board->row_cell_empty_set[row] & ~(col_to_tile_mask[cell->col]);
+  while (col_set) {
+    col = get_next_index_from_set(&col_set);
+    next_cell = &board->cells[row][col];
+    if (next_cell->number == 0)
+      changed += func(next_cell, cell);
   }
 
   // Loop over all empty cells in the same col as cell but not the tile of the cell itself
   col = cell->col;
-  if (!from_cell || (from_cell->col != col)) {
-    row_set = board->col_cell_empty_set[col] & ~(row_to_tile_mask[cell->row]);
-    while (row_set) {
-      row = get_next_index_from_set(&row_set);
-      next_cell = &board->cells[row][col];
-      if (next_cell->number == 0)
-        changed += func(next_cell, cell);
-    }
+  row_set = board->col_cell_empty_set[col] & ~(row_to_tile_mask[cell->row]);
+  while (row_set) {
+    row = get_next_index_from_set(&row_set);
+    next_cell = &board->cells[row][col];
+    if (next_cell->number == 0)
+      changed += func(next_cell, cell);
   }
 
   // Loop over all empty cells in the same tile as cell but not cell itself
   tile = cell->tile;
-  if (!from_cell || (from_cell->tile != tile)) {
-    index_set = board->tile_cell_empty_set[tile] & ~(INDEX_TO_SET(cell->index_in_tile));
-    while (index_set) {
-      index = get_next_index_from_set(&index_set);
-      next_cell = board->tile_ref[tile][index];
-      if (next_cell->number == 0)
-        changed += func(next_cell, cell);
-    }
+  index_set = board->tile_cell_empty_set[tile] & ~(INDEX_TO_SET(cell->index_in_tile));
+  while (index_set) {
+    index = get_next_index_from_set(&index_set);
+    next_cell = board->tile_ref[tile][index];
+    if (next_cell->number == 0)
+      changed += func(next_cell, cell);
   }
 
   return changed;
 }
-
-
-#if 0
-// This is the old slow solve_possible
-static
-int solve_possible(struct sudoku_board *board)
-{
-  int row, col, round, changed, changed_total;
-  struct sudoku_cell *cell;
-  unsigned int number;
-
-  if (board->debug_level >= 2)
-    printf("Solve possible\n");
-
-  changed_total = 0;
-  round = 0;
-  do {
-    if (board->debug_level >= 2)
-      printf("  Round %i\n", round++);
-
-    changed = 0;
-    for (row=0; row<9; row++) {
-      for (col=0; col<9; col++) {
-        cell = &board->cells[row][col];
-        if (cell->number == 0) {
-          number = get_cell_available_number(cell);
-
-          if (number) {
-            set_cell_number_and_log(cell, number);
-            changed++;
-          }
-        }
-      }
-    }
-    changed_total += changed;
-  } while (changed && !is_board_done(board));
-
-  mark_board_not_dirty(board);
-
-  return changed_total;
-}
-#else
 
 
 static
@@ -964,7 +928,6 @@ int solve_possible(struct sudoku_board *board)
 
   return changed_total;
 }
-#endif
 
 
 static
@@ -1020,7 +983,7 @@ int solve_eliminate_tiles_1(struct sudoku_board *board)
         // Do we have any possibilities
         if (possibilities == 0) {
           // Board is dead
-          set_board_dead(board);
+          set_board_dead(board, __func__);
           return 0;
         } else if (possibilities == 1) {
           // We have one and only one possible - set it!
@@ -1154,7 +1117,7 @@ int solve_eliminate_rows_1(struct sudoku_board *board)
         // Do we have any possibilities
         if (possibilities == 0) {
           // Board is dead
-          set_board_dead(board);
+          set_board_dead(board, __func__);
           return 0;
         } else if (possibilities == 1) {
           // We have one and only one possible - set it!
@@ -1277,7 +1240,7 @@ int solve_eliminate_cols_1(struct sudoku_board *board)
         // Do we have any possibilities
         if (possibilities == 0) {
           // Board is dead
-          set_board_dead(board);
+          set_board_dead(board, __func__);
           return 0;
         } else if (possibilities == 1) {
           // We have one and only one possible - set it!
@@ -1443,7 +1406,7 @@ int solve_eliminate_tiles_2(struct sudoku_board *board)
         // Do we have any possibilities
         if (possibilities == 0) {
           // Board is dead
-          set_board_dead(board);
+          set_board_dead(board, __func__);
           return 0;
         } else if (possibilities == 1) {
           // We have one and only one possible - set it!
@@ -1497,7 +1460,7 @@ int solve_eliminate_rows_2(struct sudoku_board *board)
         // Do we have any possibilities
         if (possibilities == 0) {
           // Board is dead
-          set_board_dead(board);
+          set_board_dead(board, __func__);
           return 0;
         } else if (possibilities == 1) {
           // We have one and only one possible - set it!
@@ -1551,7 +1514,7 @@ int solve_eliminate_cols_2(struct sudoku_board *board)
         // Do we have any possibilities
         if (possibilities == 0) {
           // Board is dead
-          set_board_dead(board);
+          set_board_dead(board, __func__);
           return 0;
         } else if (possibilities == 1) {
           // We have one and only one possible - set it!
@@ -1877,7 +1840,7 @@ int recursive_walk_to_find_loops(struct sudoku_cell *cell, struct sudoku_cell *f
   // This is a cell we haven't visited so let's explore it - recurse!
   from_cell->walk_next_cell = cell; 
   cell->walk_hop_count = from_cell->walk_hop_count + 1;
-  changed = for_each_interdependent_empty_cell(cell, from_cell, recursive_walk_to_find_loops);
+  changed = for_each_dependent_empty_from_cell(cell, from_cell, recursive_walk_to_find_loops);
   cell->walk_hop_count = 0;
   assert(cell->walk_next_cell == 0);
   from_cell->walk_next_cell = NULL; 
@@ -1903,7 +1866,7 @@ int validate_constraints_for_cell(struct sudoku_cell *cell)
   assert(cell->walk_hop_count == 0);
 
   // Find any loops that involves this starting cell
-  changed = for_each_interdependent_empty_cell(cell, NULL, recursive_walk_to_find_loops);
+  changed = for_each_dependent_empty_from_cell(cell, NULL, recursive_walk_to_find_loops);
 
   if (changed)
     changed += propagate_constraints(board);
@@ -1938,39 +1901,44 @@ static inline
 void solve_hidden_cell(struct sudoku_cell *cell)
 {
   unsigned int number, available_set;
+  struct sudoku_board *board;
   struct sudoku_board *future_board;
 
+  board = cell->board_ref;
   available_set = get_cell_possible_number_set(cell);
   for (number=1; number<=9; number++) {
     if (available_set & NUMBER_TO_SET(number)) {
-      if (cell->board_ref->debug_level)
-        printf("Trying solution [%i,%i] = %i\n", cell->row, cell->col, number);
+      if (board->debug_level)
+        printf("Trying solution [%i,%i] = %i  (level: %i)\n", cell->row, cell->col, number, board->nest_level);
 
-      future_board = dupilcate_board(cell->board_ref);
+      future_board = dupilcate_board(board);
       future_board->nest_level++;
-      future_board->debug_level = 0;
+      if (board->debug_level < 3)
+        future_board->debug_level = 0;
       set_cell_number(&future_board->cells[cell->row][cell->col], number);
       solve(future_board);
 
       if (future_board->undetermined_count == 0) {
         // Add to list of solutions
-        if (cell->board_ref->debug_level >= 1)
+        if (board->debug_level >= 1)
           printf("Found hidden solution [%i,%i] = %i\n", cell->row, cell->col, number);
         assert(future_board->solutions_list == NULL);
         assert(future_board->solutions_count == 0);
-        add_to_board_solutions_list(cell->board_ref, future_board);
-        if (is_board_solved(cell->board_ref))
-          return;
+        add_to_board_solutions_list(board, future_board);
+        // TODO: Return here is we are only looking for one solution and the board is solved
+        //$$$if (is_board_solved(board))
+          //$$$return;
       } else if (future_board->solutions_list) {
         // Add to list of solutions
-        if (cell->board_ref->debug_level >= 1)
+        if (board->debug_level >= 1)
           printf("Found hidden solution [%i,%i] = %i\n", cell->row, cell->col, number);
-        add_list_to_board_solutions_list(cell->board_ref, future_board->solutions_list);
+        add_list_to_board_solutions_list(board, future_board->solutions_list);
         future_board->solutions_list = NULL;
         future_board->solutions_count = 0;
         destroy_board(&future_board);
-        if (is_board_solved(cell->board_ref))
-          return;
+        // TODO: Return here is we are only looking for one solution and the board is solved
+        //$$$if (is_board_solved(board))
+          //$$$return;
       } else {
         destroy_board(&future_board);
       }
