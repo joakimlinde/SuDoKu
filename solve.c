@@ -23,8 +23,7 @@
 
 #define DINDENT "      "
 
-//#define MAX_WALK_HOP_COUNT 7
-#define MAX_WALK_HOP_COUNT (80)
+#define MAX_WALK_CELL_COUNT (10)
 
 static unsigned int available_set_to_number[NUMBER_TO_SET(10)+1];
 static unsigned int bit_count[NUMBER_TO_SET(10)+1];
@@ -771,11 +770,11 @@ static inline
 int for_each_empty_cell(struct sudoku_board *board, int (*func)(struct sudoku_cell *cell))
 {
   unsigned int row, col, row_set, col_set;
-  int changed;
+  int result;
   struct sudoku_cell *cell;
 
   // Loop over all empty cells by going row by row and then col by col
-  changed = 0;
+  result = 0;
   row_set = board->row_empty_set;
   while (row_set) {
     row = get_next_index_from_set(&row_set);
@@ -784,11 +783,11 @@ int for_each_empty_cell(struct sudoku_board *board, int (*func)(struct sudoku_ce
       col = get_next_index_from_set(&col_set);
       cell = &board->cells[row][col];
       if (cell->number == 0)
-        changed += func(cell);
+        result += func(cell);
     }
   }
 
-  return changed;
+  return result;
 }
 
 
@@ -799,9 +798,9 @@ int for_each_dependent_empty_cell(struct sudoku_cell *cell,
   unsigned row, col, tile, index, row_set, col_set, index_set;
   struct sudoku_board *board;
   struct sudoku_cell *from_cell;
-  int changed;
+  int result;
 
-  changed = 0;
+  result = 0;
   board = cell->board_ref;
   from_cell = cell; // We are looking at other cells form the perspective of this cell (from_cell)
 
@@ -812,7 +811,7 @@ int for_each_dependent_empty_cell(struct sudoku_cell *cell,
     col = get_next_index_from_set(&col_set);
     cell = &board->cells[row][col];
     if (cell->number == 0)
-      changed += func(cell, from_cell);
+      result += func(cell, from_cell);
   }
 
   // Loop over all empty cells on the same col as cell but not the tile of the cell itself
@@ -822,7 +821,7 @@ int for_each_dependent_empty_cell(struct sudoku_cell *cell,
     row = get_next_index_from_set(&row_set);
     cell = &board->cells[row][col];
     if (cell->number == 0)
-      changed += func(cell, from_cell);
+      result += func(cell, from_cell);
   }
 
   // Loop over all empty cells in the same tile as cell but not cell itself
@@ -832,23 +831,23 @@ int for_each_dependent_empty_cell(struct sudoku_cell *cell,
     index = get_next_index_from_set(&index_set);
     cell = board->tile_ref[tile][index];
     if (cell->number == 0)
-      changed += func(cell, from_cell);
+      result += func(cell, from_cell);
   }
 
-  return changed;
+  return result;
 }
 
 
 static inline
-int for_each_dependent_empty_from_cell(struct sudoku_cell *cell, struct sudoku_cell *from_cell,
+int for_each_dependent_empty_from_cell(struct sudoku_cell *cell,
                                        int (*func)(struct sudoku_cell *cell, struct sudoku_cell *from_cell))
 {
   unsigned row, col, tile, index, row_set, col_set, index_set;
   struct sudoku_board *board;
   struct sudoku_cell *next_cell;
-  int changed;
+  int result;
 
-  changed = 0;
+  result = 0;
   board = cell->board_ref;
 
   // Loop over all empty cells on the same row as cell but not the tile of the cell itself
@@ -858,7 +857,7 @@ int for_each_dependent_empty_from_cell(struct sudoku_cell *cell, struct sudoku_c
     col = get_next_index_from_set(&col_set);
     next_cell = &board->cells[row][col];
     if (next_cell->number == 0)
-      changed += func(next_cell, cell);
+      result += func(next_cell, cell);
   }
 
   // Loop over all empty cells in the same col as cell but not the tile of the cell itself
@@ -868,7 +867,7 @@ int for_each_dependent_empty_from_cell(struct sudoku_cell *cell, struct sudoku_c
     row = get_next_index_from_set(&row_set);
     next_cell = &board->cells[row][col];
     if (next_cell->number == 0)
-      changed += func(next_cell, cell);
+      result += func(next_cell, cell);
   }
 
   // Loop over all empty cells in the same tile as cell but not cell itself
@@ -878,10 +877,10 @@ int for_each_dependent_empty_from_cell(struct sudoku_cell *cell, struct sudoku_c
     index = get_next_index_from_set(&index_set);
     next_cell = board->tile_ref[tile][index];
     if (next_cell->number == 0)
-      changed += func(next_cell, cell);
+      result += func(next_cell, cell);
   }
 
-  return changed;
+  return result;
 }
 
 
@@ -1719,6 +1718,7 @@ int solve_tile_interlock(struct sudoku_board *board)
 }
 
 
+#if 0
 static 
 void print_cell_loop(struct sudoku_cell *cell) {
   printf(DINDENT "Loop: ");
@@ -1729,7 +1729,6 @@ void print_cell_loop(struct sudoku_cell *cell) {
   } while (cell->walk_hop_count != 0);
   printf("\n");
 }
-
 
 static
 int analyze_interdependent_loop(struct sudoku_cell *cell) {
@@ -1811,81 +1810,120 @@ int analyze_interdependent_loop(struct sudoku_cell *cell) {
 
   return changed;
 }
+#endif
 
 
 static
-int recursive_walk_to_find_loops(struct sudoku_cell *cell, struct sudoku_cell *from_cell) {
-  struct sudoku_board *board;
-  int changed;
+int graph_analysis_recursive_walk(struct sudoku_cell *cell, struct sudoku_cell *from_cell) {
+  // TODO: See if we can rewrite this as interative instead of recursive
+  //       This is why we have no local variables 
 
-  board = from_cell->board_ref;
-  if (cell->walk_next_cell) {
-    if (cell->walk_hop_count == 0) {
-      // We have reached the start so we have a loop - close the loop & analyze
-      from_cell->walk_next_cell = cell; 
-      changed = analyze_interdependent_loop(cell);
-      from_cell->walk_next_cell = NULL; 
-      return changed;
-    } else {
-      // This cell is already in our walk path and on our call stack - ignore it
-     return 0;
-    }
+  if (cell->walk_cell_count) {
+    // We have been here before - are we compatible?
+    if (cell->walk_number_as_set == from_cell->walk_number_as_set)
+      return 1;
+    else
+      return 0;
+
   }
 
-  if (from_cell->walk_hop_count == MAX_WALK_HOP_COUNT) {
+  if (from_cell->walk_cell_count == MAX_WALK_CELL_COUNT) {
     // We have walked too far - time to return
     return 0;
   }
 
   // This is a cell we haven't visited so let's explore it - recurse!
-  from_cell->walk_next_cell = cell; 
-  cell->walk_hop_count = from_cell->walk_hop_count + 1;
-  changed = for_each_dependent_empty_from_cell(cell, from_cell, recursive_walk_to_find_loops);
-  cell->walk_hop_count = 0;
-  assert(cell->walk_next_cell == 0);
-  from_cell->walk_next_cell = NULL; 
+  cell->walk_cell_count = from_cell->walk_cell_count + 1;
+  cell->walk_possible_number_set = get_cell_possible_number_set(cell);
 
-  return changed;
+  if ((cell->walk_possible_number_set & from_cell->walk_possible_number_set) == 0) {
+    // There is no possible influence between these two cells so we end here
+    cell->walk_cell_count = 0;
+    return 0;
+  }
+
+  //$printf("%i:[%i,%i]\n", cell->walk_cell_count, cell->row, cell->col);
+
+  cell->walk_remaining_number_set = cell->walk_possible_number_set;
+  while (cell->walk_remaining_number_set) {
+    cell->walk_number_as_set = NUMBER_TO_SET(get_next_index_from_set(&cell->walk_remaining_number_set));
+
+    // See if we can make this number work recursively!
+    if (for_each_dependent_empty_from_cell(cell, graph_analysis_recursive_walk) == 0) {
+      // The walk got this number to work - we are done!
+      cell->walk_cell_count = 0;
+      return 0;
+    }
+  }
+
+  // We got no number to work - time to give up 
+  cell->walk_cell_count = 0;
+  return 1;
 }
 
 
 static
-int validate_constraints_for_cell(struct sudoku_cell *cell) 
+int graph_analysis_for_cell(struct sudoku_cell *cell) 
 {
   struct sudoku_board *board;
-  int changed;
+  int result;
+  int changed, total_changed;
 
-  changed = 0;
+  total_changed = 0;
   board = cell->board_ref;
   if (board->debug_level >= 2) {
     printf("  Cell [%i,%i] with ", cell->row, cell->col);
     print_number_set(get_cell_possible_number_set(cell), "\n");
   }
 
-  assert(cell->walk_next_cell == NULL);
-  assert(cell->walk_hop_count == 0);
+  assert(cell->walk_cell_count == 0);
+  cell->walk_cell_count = 1; 
+  cell->walk_possible_number_set = get_cell_possible_number_set(cell);
 
-  // Find any loops that involves this starting cell
-  changed = for_each_dependent_empty_from_cell(cell, NULL, recursive_walk_to_find_loops);
+  cell->walk_remaining_number_set = cell->walk_possible_number_set;
+  while (cell->walk_remaining_number_set) {
+    cell->walk_number_as_set = NUMBER_TO_SET(get_next_index_from_set(&cell->walk_remaining_number_set));
 
-  if (changed)
-    changed += propagate_constraints(board);
+    if (board->debug_level >= 2)
+      printf ("trying %x...\n", available_set_to_number[cell->walk_number_as_set]);
 
-  return changed;
+    // See if we can make this number work - recursively!
+    result = for_each_dependent_empty_from_cell(cell, graph_analysis_recursive_walk);
+
+    if (result) {
+      // The walk couldn't get this number to work - remove it!
+      changed = reserve_cell_and_log(cell, (cell->walk_possible_number_set & ~cell->walk_number_as_set), 
+                                      __func__); 
+      if (changed)
+        changed += propagate_constraints(cell->board_ref);
+
+      if (cell->number)
+        break;
+
+      cell->walk_possible_number_set = get_cell_possible_number_set(cell);
+      cell->walk_remaining_number_set &= cell->walk_possible_number_set; 
+
+      total_changed += changed;
+    }
+  }
+
+  cell->walk_cell_count = 0; 
+
+  return total_changed;
 }
 
 
 static
-int solve_validate_constraints(struct sudoku_board *board)
+int solve_graph_analysis(struct sudoku_board *board)
 {
   int changed, total_changed;
 
   if (board->debug_level >= 2)
-    printf("Solve validate constraints\n");
+    printf("Solve graph analysis\n");
 
   total_changed = 0;
   do {
-    changed = for_each_empty_cell(board, validate_constraints_for_cell);
+    changed = for_each_empty_cell(board, graph_analysis_for_cell);
 
     if (changed && !is_board_done(board))
       changed += solve_eliminate(board);
@@ -1992,7 +2030,7 @@ int solve(struct sudoku_board *board)
     solve_tile_interlock(board);   
 
   if (!is_board_done(board))
-    solve_validate_constraints(board);
+    solve_graph_analysis(board);
 
   if (!is_board_done(board))
     solve_hidden(board);
