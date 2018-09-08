@@ -1935,6 +1935,186 @@ int solve_graph_analysis(struct sudoku_board *board)
 }
 
 
+struct try_stack {
+  struct sudoku_cell *cell_ref;
+  unsigned int *row_number_taken_set_ref;
+  unsigned int *col_number_taken_set_ref;
+  unsigned int *tile_number_taken_set_ref;
+  unsigned int number;
+  unsigned int number_as_set;
+  unsigned int possible_count;
+  unsigned int possible_number_set;
+  unsigned int remaining_number_set;  
+  unsigned int orig_row_number_taken_set;
+  unsigned int orig_col_number_taken_set;
+  unsigned int orig_tile_number_taken_set;
+};
+
+
+static inline
+struct try_stack* try_build_stack_from_board(struct sudoku_board *board, struct try_stack *stack)
+{
+  unsigned int row, col, row_set, col_set;
+  struct sudoku_cell *cell;
+  struct try_stack *sp; // stack pointer
+
+  // Loop over all empty cells by going row by row and then col by col
+  sp = stack;
+  row_set = board->row_empty_set;
+  while (row_set) {
+    row = get_next_index_from_set(&row_set);
+    col_set = board->row_cell_empty_set[row];
+    while (col_set) {
+      col = get_next_index_from_set(&col_set);
+      cell = &board->cells[row][col];
+      if (cell->number == 0) {
+        sp->cell_ref = cell;
+        sp->row_number_taken_set_ref = cell->row_number_taken_set_ref;
+        sp->col_number_taken_set_ref = cell->col_number_taken_set_ref;
+        sp->tile_number_taken_set_ref = cell->tile_number_taken_set_ref;
+        sp->possible_number_set = get_cell_possible_number_set(cell);
+        sp->possible_count = bit_count[sp->possible_number_set];
+        sp++;
+      }
+    }
+  }
+
+  if (board->debug_level >= 2)
+    printf("  Try stack size: %li\n", sp-stack);
+
+  return sp;
+}
+
+
+static inline
+void try_backup_taken_data(struct try_stack *sp) {
+  sp->orig_row_number_taken_set = *sp->row_number_taken_set_ref;
+  sp->orig_col_number_taken_set = *sp->col_number_taken_set_ref;
+  sp->orig_tile_number_taken_set = *sp->tile_number_taken_set_ref;
+}
+
+
+static inline
+void try_restore_taken_data(struct try_stack *sp) {
+  *sp->row_number_taken_set_ref = sp->orig_row_number_taken_set;
+  *sp->col_number_taken_set_ref = sp->orig_col_number_taken_set;
+  *sp->tile_number_taken_set_ref = sp->orig_tile_number_taken_set;
+}
+
+
+static inline
+void try_setup_taken_data(struct try_stack *sp) {
+  *sp->row_number_taken_set_ref |= sp->number_as_set;
+  *sp->col_number_taken_set_ref |= sp->number_as_set;
+  *sp->tile_number_taken_set_ref |= sp->number_as_set;
+}
+
+
+static inline
+bool try_search_stack_for_solution(struct try_stack *bsp, struct try_stack *tsp) {
+  struct try_stack *sp; // stack pointer
+  unsigned int debug_level; 
+  bool found;
+
+  debug_level = bsp->cell_ref->board_ref->debug_level;
+
+  sp = bsp;
+  sp->remaining_number_set = sp->possible_number_set;
+  try_backup_taken_data(sp);
+  while (true) {
+    // Do we have any options to explore at this level? 
+    // If so, explore them. If not, go back to previous level.
+    if (sp->remaining_number_set) {
+      sp->number = get_next_index_from_set(&sp->remaining_number_set);
+      sp->number_as_set = NUMBER_TO_SET(sp->number);
+
+      // Is this number possible? 
+      if (sp->number_as_set & get_cell_possible_number_set(sp->cell_ref)) {
+        // Seems possible - go head and try
+        if (debug_level >= 4)
+          printf(DINDENT "%li: trying [%i,%i] = %i\n", sp-bsp, sp->cell_ref->row, 
+                                                      sp->cell_ref->col, sp->number);
+
+        // Mark number as taken for everyone else
+        try_setup_taken_data(sp);
+
+        // Goto next level
+        if (sp == tsp) {
+          // We have reached the top of the stack and are done - we have solution!
+          // Before leaving, restore taken sets as we cound them
+          while (sp != bsp)
+            try_restore_taken_data(sp--);
+          found = true;
+          break;
+        } else {
+          // Move to the next level and see if we have any options here
+          sp++;
+          sp->remaining_number_set = sp->possible_number_set;
+          // Backup taken sets before we do anything
+          try_backup_taken_data(sp);
+        }
+      }
+    } else {
+      // Goto previous level
+      if (sp == bsp) {
+        // We are at base level and did not finish so no solution found 
+        found = false;
+        break;
+      } else {
+        // Before leaving, restore taken sets as we cound them
+        try_restore_taken_data(sp--);
+      }
+    }
+  }
+  assert(sp == bsp);
+  try_restore_taken_data(sp);
+
+  return found;
+}
+
+
+static
+int solve_try(struct sudoku_board *board)
+{
+  struct try_stack stack[8*8];
+  struct try_stack *sp; // stack pointer
+  struct try_stack *bsp; // base stack pointer
+  struct try_stack *tsp; // top stack pointer
+  int changed;
+  bool found;
+
+  changed = 0;
+
+  if (board->debug_level >= 2)
+    printf("Solve try\n");
+
+  // Build help stack data
+  bsp = &stack[0];
+  sp = try_build_stack_from_board(board, bsp);
+  if (sp == bsp)
+    return 0;
+  tsp = sp-1; 
+
+  // TODO: sort the stack on possible_count
+  
+  // Search for a solution
+  found = try_search_stack_for_solution(bsp, tsp);
+
+  if (found) {
+    // Implemement the solution we found
+    sp = bsp;
+    do {
+      set_cell_number_and_log(sp->cell_ref, sp->number);
+    } while (sp != tsp);
+
+    propagate_constraints(board);
+    changed++;
+  }
+
+  return changed;
+}
+
+
 static inline
 void solve_hidden_cell(struct sudoku_cell *cell)
 {
@@ -2030,10 +2210,15 @@ int solve(struct sudoku_board *board)
     solve_tile_interlock(board);   
 
   if (!is_board_done(board))
+    solve_try(board);
+
+#if 0
+  if (!is_board_done(board))
     solve_graph_analysis(board);
 
   if (!is_board_done(board))
     solve_hidden(board);
+#endif 
 
   solutions_count = board->solutions_count;
   if (board->undetermined_count == 0)
