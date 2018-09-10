@@ -63,10 +63,6 @@ void init_board(struct sudoku_board *board)
       cell->row_cell_empty_set_ref = &board->row_cell_empty_set[row];
       cell->col_cell_empty_set_ref = &board->col_cell_empty_set[col];
       cell->tile_cell_empty_set_ref = &board->tile_cell_empty_set[rowcol_to_tile[row][col]];
-      cell->walk_cell_count = 0; 
-      cell->walk_number_as_set = 0;
-      cell->walk_possible_number_set = 0;
-      cell->walk_remaining_number_set = 0;
 
       board->tile_ref[cell->tile][cell->index_in_tile] = cell;
     }
@@ -126,10 +122,6 @@ void init_board_from_orig(struct sudoku_board *board, struct sudoku_board *orig_
       cell->row_cell_empty_set_ref = &board->row_cell_empty_set[row];
       cell->col_cell_empty_set_ref = &board->col_cell_empty_set[col];
       cell->tile_cell_empty_set_ref = &board->tile_cell_empty_set[rowcol_to_tile[row][col]];
-      cell->walk_cell_count = 0; 
-      cell->walk_number_as_set = 0;
-      cell->walk_possible_number_set = 0;
-      cell->walk_remaining_number_set = 0;
 
       board->tile_ref[cell->tile][cell->index_in_tile] = cell;
     }

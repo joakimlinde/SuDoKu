@@ -62,10 +62,6 @@ struct sudoku_cell {
   unsigned int *row_cell_empty_set_ref;
   unsigned int *col_cell_empty_set_ref;
   unsigned int *tile_cell_empty_set_ref;
-  unsigned int walk_cell_count; 
-  unsigned int walk_number_as_set; // The tentative number for this cell for walk with walk_id. Changes during the walk.
-  unsigned int walk_possible_number_set;
-  unsigned int walk_remaining_number_set;
 };
 
 struct sudoku_board {
