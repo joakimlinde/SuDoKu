@@ -1743,45 +1743,55 @@ int analyze_tile_interlock_rectangle(struct sudoku_cell *cell1, struct sudoku_ce
 static
 int solve_tile_interlock_rectangle(struct sudoku_board *board)
 {
-  unsigned int row1, col1, row2, col2, start_row, start_col, tile1;
+  unsigned int row1, col1, row2, col2, row1_set, row2_set, col1_set, col2_set;
   struct sudoku_cell *cell1, *cell2, *cell3, *cell4;
-  const int search_start_row_for_tile[9] = { 3, 3, 0, 6, 6, 0, 0, 0, 0};
-  const int search_start_col_for_tile[9] = { 3, 6, 0, 3, 6, 0, 0, 0, 0};
+  const unsigned int above_mask[9] = { 0b111111000, 0b111111000, 0b111111000,
+                                       0b111000000, 0b111000000, 0b111000000, 
+                                       0b000000000, 0b000000000, 0b000000000 }; 
   int changed;
 
   if (board->debug_level >= 2)
     printf("Solve tile interlock rectangle\n");
 
   changed = 0;
-  for (row1=0; row1<6; row1++) {
+
+  // Loop over row 0 to 5 with empty cells
+  row1_set = board->row_empty_set & 0b000111111; 
+  while (row1_set) {
+    row1 = get_next_index_from_set(&row1_set);
     if (board->debug_level >= 2)
       printf("  Row %i\n", row1);
 
-    for (col1=0; col1<6; col1++) {
+    // Loop over col 0 to 5 with empty cells
+    col1_set = board->row_cell_empty_set[row1]  & 0b000111111;
+    while (col1_set) {
+      col1 = get_next_index_from_set(&col1_set);
       if (board->debug_level >= 2)
         printf("    Col %i\n", col1);
 
       cell1 = &board->cells[row1][col1];
-      if (cell1->number == 0) {
-        tile1 = cell1->tile;
+      assert(cell1->number == 0);
 
-        start_row = search_start_row_for_tile[tile1];
-        start_col = search_start_col_for_tile[tile1];
-        assert(start_row && start_col);
+      // Loop over rows in higher tiles with empty cells
+      row2_set = board->row_empty_set & above_mask[row1]; 
+      while (row2_set) {
+        row2 = get_next_index_from_set(&row2_set);
 
-        for (row2=start_row; row2<9; row2++) {
-          for (col2=start_col; col2<9; col2++) {
-            cell2 = &board->cells[row2][col2]; 
-            if ((cell2->number == 0) && 
-                (board->cells[row1][col2].number == 0) &&
-                (board->cells[row2][col1].number == 0)) {
-              // We have found a rectangle of empty cells
-              if (board->debug_level >= 4)
-                printf(DINDENT "Found inter-tile rectangle: [%i,%i]-[%i,%i]\n", row1, col1, row2, col2);
-              cell3 = &board->cells[row2][col1];
-              cell4 = &board->cells[row1][col2];
-              changed += analyze_tile_interlock_rectangle(cell1, cell2, cell3, cell4);
-            }
+        // Loop over cols in higher tiles with empty cells
+        col2_set = board->row_cell_empty_set[row2]  & above_mask[col1];
+        while (col2_set) {
+          col2 = get_next_index_from_set(&col2_set);
+          cell2 = &board->cells[row2][col2]; 
+          assert(cell2->number == 0);
+
+          if ((board->cells[row1][col2].number == 0) &&
+              (board->cells[row2][col1].number == 0)) {
+            // We have found a rectangle of empty cells
+            if (board->debug_level >= 4)
+              printf(DINDENT "Found inter-tile rectangle: [%i,%i]-[%i,%i]\n", row1, col1, row2, col2);
+            cell3 = &board->cells[row2][col1];
+            cell4 = &board->cells[row1][col2];
+            changed += analyze_tile_interlock_rectangle(cell1, cell2, cell3, cell4);
           }
         }
       }
@@ -1829,46 +1839,45 @@ int solve_tile_interlock(struct sudoku_board *board)
 static inline
 void solve_hidden_cell(struct sudoku_cell *cell)
 {
-  unsigned int number, possible_set;
+  unsigned int number, number_set;
   struct sudoku_board *board;
   struct sudoku_board *future_board;
 
   board = cell->board_ref;
-  possible_set = get_cell_possible_number_set(cell);
-  for (number=1; number<=9; number++) {
-    if (possible_set & NUMBER_TO_SET(number)) {
-      if (board->debug_level)
-        printf("Trying solution [%i,%i] = %i  (level: %i)\n", cell->row, cell->col, number, board->nest_level);
+  number_set = get_cell_possible_number_set(cell);
+  while (number_set) {
+    number = get_next_index_from_set(&number_set);
+    if (board->debug_level)
+      printf("Trying solution [%i,%i] = %i  (level: %i)\n", cell->row, cell->col, number, board->nest_level);
 
-      future_board = dupilcate_board(board);
-      future_board->nest_level++;
-      if (board->debug_level < 3)
-        future_board->debug_level = 0;
-      set_cell_number(&future_board->cells[cell->row][cell->col], number);
-      solve(future_board);
+    future_board = dupilcate_board(board);
+    future_board->nest_level++;
+    if (board->debug_level < 3)
+      future_board->debug_level = 0;
+    set_cell_number(&future_board->cells[cell->row][cell->col], number);
+    solve(future_board);
 
-      if (future_board->undetermined_count == 0) {
-        // Add to list of solutions
-        if (board->debug_level >= 1)
-          printf("Found hidden solution [%i,%i] = %i\n", cell->row, cell->col, number);
-        assert(future_board->solutions_list == NULL);
-        assert(future_board->solutions_count == 0);
-        add_to_board_solutions_list(board, future_board);
-        if (is_board_solved(board))
-          return;
-      } else if (future_board->solutions_list) {
-        // Add to list of solutions
-        if (board->debug_level >= 1)
-          printf("Found hidden solution [%i,%i] = %i\n", cell->row, cell->col, number);
-        add_list_to_board_solutions_list(board, future_board->solutions_list);
-        future_board->solutions_list = NULL;
-        future_board->solutions_count = 0;
-        destroy_board(&future_board);
-        if (is_board_solved(board))
-          return;
-      } else {
-        destroy_board(&future_board);
-      }
+    if (future_board->undetermined_count == 0) {
+      // Add to list of solutions
+      if (board->debug_level >= 1)
+        printf("Found hidden solution [%i,%i] = %i\n", cell->row, cell->col, number);
+      assert(future_board->solutions_list == NULL);
+      assert(future_board->solutions_count == 0);
+      add_to_board_solutions_list(board, future_board);
+      if (is_board_solved(board))
+        return;
+    } else if (future_board->solutions_list) {
+      // Add to list of solutions
+      if (board->debug_level >= 1)
+        printf("Found hidden solution [%i,%i] = %i\n", cell->row, cell->col, number);
+      add_list_to_board_solutions_list(board, future_board->solutions_list);
+      future_board->solutions_list = NULL;
+      future_board->solutions_count = 0;
+      destroy_board(&future_board);
+      if (is_board_solved(board))
+        return;
+    } else {
+      destroy_board(&future_board);
     }
   }
 }
