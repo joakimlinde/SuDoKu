@@ -518,7 +518,7 @@ int reserve_tile_in_row(struct sudoku_cell *possible_cell, unsigned int number_s
     col = get_next_index_from_set(&col_set);
     cell = &board->cells[my_row][col];
     assert(cell->number == 0);  
-
+    
     possible_set = get_cell_possible_number_set(cell);
     if (possible_set & number_set) {
       // The number is a possibility for this cell
@@ -1628,10 +1628,10 @@ int solve_eliminate(struct sudoku_board *board)
 {
   int this_changed, changed, total_changed, round, i;
   int (*const solve_func_arr[])(struct sudoku_board*) = {
+    solve_eliminate_tiles_2,
     solve_eliminate_tiles_1,
     solve_eliminate_rows_1,
     solve_eliminate_cols_1,
-    solve_eliminate_tiles_2,
     solve_eliminate_rows_2,
     solve_eliminate_cols_2
   }; 
@@ -1647,7 +1647,7 @@ int solve_eliminate(struct sudoku_board *board)
       printf("  Round %i\n", round++);
     changed = 0;
 
-    for(i=0; i<(sizeof(solve_func_arr)/sizeof(solve_func_arr[0])) ; i++) {
+    for(i=0; i<(sizeof(solve_func_arr)/sizeof(solve_func_arr[0])); i++) {
       this_changed = solve_func_arr[i](board);
       if (is_board_done(board))
         break;
@@ -1721,11 +1721,11 @@ int analyze_tile_interlock_rectangle(struct sudoku_cell *cell1, struct sudoku_ce
 static
 int solve_tile_interlock_rectangle(struct sudoku_board *board)
 {
-  int row1, col1, row2, col2, start_row, start_col, changed;
-  unsigned int tile1;
+  unsigned int row1, col1, row2, col2, start_row, start_col, tile1;
   struct sudoku_cell *cell1, *cell2, *cell3, *cell4;
   const int search_start_row_for_tile[9] = { 3, 3, 0, 6, 6, 0, 0, 0, 0};
   const int search_start_col_for_tile[9] = { 3, 6, 0, 3, 6, 0, 0, 0, 0};
+  int changed;
 
   if (board->debug_level >= 2)
     printf("Solve tile interlock rectangle\n");
