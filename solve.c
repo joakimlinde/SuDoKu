@@ -23,7 +23,9 @@
 
 #define DINDENT "      "
 
-static unsigned int available_set_to_number[NUMBER_TO_SET(10)+1];
+#define NUMBER_SET_TO_NUMBER(number_set) (number_set_to_number[number_set])
+
+static unsigned int number_set_to_number[NUMBER_TO_SET(10)+1];
 static unsigned int bit_count[NUMBER_TO_SET(10)+1];
 static struct {
   unsigned int remaining_set;
@@ -106,10 +108,10 @@ void init()
   int i;
 
   for (i=0; i<=NUMBER_TO_SET(10); i++)
-    available_set_to_number[i] = 0;
+    number_set_to_number[i] = 0;
 
   for (i=1; i<=9; i++)
-    available_set_to_number[NUMBER_TO_SET(i)] = i;
+    number_set_to_number[NUMBER_TO_SET(i)] = i;
 
   for (i=0; i<NUMBER_TO_SET(10); i++) {
     bit_count[i] = bit_count_func(i);
@@ -222,9 +224,9 @@ unsigned int get_cell_possible_number_set(struct sudoku_cell *cell)
 
 
 static inline
-unsigned int get_cell_available_number(struct sudoku_cell *cell)
+unsigned int get_cell_possible_number(struct sudoku_cell *cell)
 {
-  return available_set_to_number[get_cell_possible_number_set(cell)];
+  return number_set_to_number[get_cell_possible_number_set(cell)];
 }
 
 
@@ -403,7 +405,7 @@ static inline
 int reserve_row_in_tile(struct sudoku_cell *possible_cell, unsigned int number_set)
 {
   int row, col, my_row, my_tile, changed;
-  unsigned int reserve_number_set, available_set;
+  unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
 
@@ -415,15 +417,15 @@ int reserve_row_in_tile(struct sudoku_cell *possible_cell, unsigned int number_s
     for (col=0; col<9; col++) {
       cell = &board->cells[row][col];
       if ((cell->tile == my_tile) && (cell->number == 0)) {
-        available_set = get_cell_possible_number_set(cell);
-        if (available_set & number_set) {
+        possible_set = get_cell_possible_number_set(cell);
+        if (possible_set & number_set) {
           // The number is a possibility for this cell
           if (cell->row == my_row) {
             // This is my tile and my row so include the number in the reservation
-            reserve_number_set = available_set;
+            reserve_number_set = possible_set;
           } else {
             // This is my tile but not my row so exclude the number in the reservation
-            reserve_number_set = available_set & (~number_set);
+            reserve_number_set = possible_set & (~number_set);
           }
 
           // Make the reservation
@@ -441,7 +443,7 @@ static inline
 int reserve_col_in_tile(struct sudoku_cell *possible_cell, unsigned int number_set)
 {
   int row, col, my_col, my_tile, changed;
-  unsigned int reserve_number_set, available_set;
+  unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
 
@@ -453,15 +455,15 @@ int reserve_col_in_tile(struct sudoku_cell *possible_cell, unsigned int number_s
     for (col=0; col<9; col++) {
       cell = &board->cells[row][col];
       if ((cell->tile == my_tile) && (cell->number == 0)) {
-        available_set = get_cell_possible_number_set(cell);
-        if (available_set & number_set) {
+        possible_set = get_cell_possible_number_set(cell);
+        if (possible_set & number_set) {
           // The number is a possibility for this cell
           if (cell->col == my_col) {
             // This is my tile and my row so include the number in the reservation
-            reserve_number_set = available_set;
+            reserve_number_set = possible_set;
           } else {
             // This is my tile but not my row so exclude the number in the reservation
-            reserve_number_set = available_set & (~number_set);
+            reserve_number_set = possible_set & (~number_set);
           }
 
           // Make the reservation
@@ -479,7 +481,7 @@ static inline
 int reserve_tile_in_row(struct sudoku_cell *possible_cell, unsigned int number_set)
 {
   int my_row, col, my_tile, changed;
-  unsigned int reserve_number_set, available_set;
+  unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
 
@@ -490,15 +492,15 @@ int reserve_tile_in_row(struct sudoku_cell *possible_cell, unsigned int number_s
   for (col=0; col<9; col++) {
     cell = &board->cells[my_row][col];
     if (cell->number == 0) {
-      available_set = get_cell_possible_number_set(cell);
-      if (available_set & number_set) {
+      possible_set = get_cell_possible_number_set(cell);
+      if (possible_set & number_set) {
         // The number is a possibility for this cell
         if (cell->tile == my_tile) {
           // This is my tile and my row so include the number in the reservation
-          reserve_number_set = available_set;
+          reserve_number_set = possible_set;
         } else {
           // This is my tile but not my row so exclude the number in the reservation
-          reserve_number_set = available_set & (~number_set);
+          reserve_number_set = possible_set & (~number_set);
         }
 
         // Make the reservation
@@ -515,7 +517,7 @@ static inline
 int reserve_tile_in_col(struct sudoku_cell *possible_cell, unsigned int number_set)
 {
   int row, my_col, my_tile, changed;
-  unsigned int reserve_number_set, available_set;
+  unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
 
@@ -526,15 +528,15 @@ int reserve_tile_in_col(struct sudoku_cell *possible_cell, unsigned int number_s
   for (row=0; row<9; row++) {
     cell = &board->cells[row][my_col];
     if (cell->number == 0) {
-      available_set = get_cell_possible_number_set(cell);
-      if (available_set & number_set) {
+      possible_set = get_cell_possible_number_set(cell);
+      if (possible_set & number_set) {
         // The number is a possibility for this cell
         if (cell->tile == my_tile) {
           // This is my tile and my row so include the number in the reservation
-          reserve_number_set = available_set;
+          reserve_number_set = possible_set;
         } else {
           // This is my tile but not my row so exclude the number in the reservation
-          reserve_number_set = available_set & (~number_set);
+          reserve_number_set = possible_set & (~number_set);
         }
 
         // Make the reservation
@@ -551,7 +553,7 @@ static inline
 int reserve_cells_with_index_in_tile(struct sudoku_cell *possible_cell, unsigned int possible_index_set, unsigned int number_set)
 {
   int my_tile, i, changed;
-  unsigned int reserve_number_set, available_set;
+  unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
 
@@ -561,12 +563,12 @@ int reserve_cells_with_index_in_tile(struct sudoku_cell *possible_cell, unsigned
   for (i=0; i<9; i++) {
     cell = board->tile_ref[my_tile][i];
     if (cell->number == 0) {
-      available_set = get_cell_possible_number_set(cell);
-      if (available_set & number_set) {
+      possible_set = get_cell_possible_number_set(cell);
+      if (possible_set & number_set) {
         if (INDEX_TO_SET(i) & possible_index_set) 
-          reserve_number_set = available_set;
+          reserve_number_set = possible_set;
         else 
-          reserve_number_set = available_set & (~number_set);
+          reserve_number_set = possible_set & (~number_set);
         
        changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_cells_with_index_in_tile");
       }
@@ -599,7 +601,7 @@ static inline
 int reserve_cells_with_index_in_row(struct sudoku_cell *possible_cell, unsigned int possible_index_set, unsigned int number_set)
 {
   int my_row, col, changed, i;
-  unsigned int reserve_number_set, available_set;
+  unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
 
@@ -609,15 +611,15 @@ int reserve_cells_with_index_in_row(struct sudoku_cell *possible_cell, unsigned 
   for (col=0; col<9; col++) {
     cell = &board->cells[my_row][col];
     if (cell->number == 0) {
-      available_set = get_cell_possible_number_set(cell);
-      if (available_set & number_set) {
+      possible_set = get_cell_possible_number_set(cell);
+      if (possible_set & number_set) {
         // The number is a possibility for this cell
         if (INDEX_TO_SET(col) & possible_index_set) {
           // This is cell so include the number in the reservation
-          reserve_number_set = available_set;
+          reserve_number_set = possible_set;
         } else {
           // This is not mmy cell so exclude the number in the reservation
-          reserve_number_set = available_set & (~number_set);
+          reserve_number_set = possible_set & (~number_set);
         }
 
         // Make the reservation
@@ -642,7 +644,7 @@ static inline
 int reserve_cells_with_index_in_col(struct sudoku_cell *possible_cell, unsigned int possible_index_set, unsigned int number_set)
 {
   int row, my_col, my_tile, changed, i;
-  unsigned int reserve_number_set, available_set;
+  unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
 
@@ -653,15 +655,15 @@ int reserve_cells_with_index_in_col(struct sudoku_cell *possible_cell, unsigned 
   for (row=0; row<9; row++) {
     cell = &board->cells[row][my_col];
     if (cell->number == 0) {
-      available_set = get_cell_possible_number_set(cell);
-      if (available_set & number_set) {
+      possible_set = get_cell_possible_number_set(cell);
+      if (possible_set & number_set) {
         // The number is a possibility for this cell
         if (INDEX_TO_SET(row) & possible_index_set) {
           // This is cell so include the number in the reservation
-          reserve_number_set = available_set;
+          reserve_number_set = possible_set;
         } else {
           // This is not mmy cell so exclude the number in the reservation
-          reserve_number_set = available_set & (~number_set);
+          reserve_number_set = possible_set & (~number_set);
         }
 
         // Make the reservation
@@ -712,7 +714,7 @@ int propagate_constraints(struct sudoku_board *board)
         if (board->debug_level >= 4)
           printf(DINDENT "Empty cell in dirty row [%i,%i]\n", row, col);
         assert(cell->number == 0);
-        number = get_cell_available_number(cell);
+        number = get_cell_possible_number(cell);
 
         if (number) {
           set_cell_number_and_log(cell, number);
@@ -733,7 +735,7 @@ int propagate_constraints(struct sudoku_board *board)
         if (board->debug_level >= 4)
           printf(DINDENT "Empty cell in dirty col [%i,%i]\n", row, col);
         assert(cell->number == 0);
-        number = get_cell_available_number(cell);
+        number = get_cell_possible_number(cell);
 
         if (number) {
           set_cell_number_and_log(cell, number);
@@ -754,7 +756,7 @@ int propagate_constraints(struct sudoku_board *board)
         if (board->debug_level >= 4)
           printf(DINDENT "Empty cell in dirty tile [%i,%i]\n", cell->row, cell->col);
         assert(cell->number == 0);
-        number = get_cell_available_number(cell);
+        number = get_cell_possible_number(cell);
 
         if (number) {
           set_cell_number_and_log(cell, number);
@@ -906,7 +908,7 @@ int solve_possible(struct sudoku_board *board)
       printf("  Round %i\n", round++);
 
     // Loop over all empty cells by going row by row and col by col
-    changed = 0;
+    changed = 0;    
     row_set = board->row_empty_set;
     while (row_set) {
       row = get_next_index_from_set(&row_set);
@@ -915,7 +917,7 @@ int solve_possible(struct sudoku_board *board)
         col = get_next_index_from_set(&col_set);
         cell = &board->cells[row][col];
         assert(cell->number == 0);
-        number = get_cell_available_number(cell);
+        number = get_cell_possible_number(cell);
 
         if (number) {
           set_cell_number_and_log(cell, number);
@@ -1413,7 +1415,7 @@ int solve_eliminate_tiles_2(struct sudoku_board *board)
           return 0;
         } else if (possibilities == 1) {
           // We have one and only one possible - set it!
-          set_cell_number_and_log(cell, available_set_to_number[possible_number_set]);
+          set_cell_number_and_log(cell, number_set_to_number[possible_number_set]);
           changed++;
         } else {
           // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
@@ -1467,7 +1469,7 @@ int solve_eliminate_rows_2(struct sudoku_board *board)
           return 0;
         } else if (possibilities == 1) {
           // We have one and only one possible - set it!
-          set_cell_number_and_log(cell, available_set_to_number[possible_number_set]);
+          set_cell_number_and_log(cell, number_set_to_number[possible_number_set]);
           changed++;
         } else {
           // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
@@ -1521,7 +1523,7 @@ int solve_eliminate_cols_2(struct sudoku_board *board)
           return 0;
         } else if (possibilities == 1) {
           // We have one and only one possible - set it!
-          set_cell_number_and_log(cell, available_set_to_number[possible_number_set]);
+          set_cell_number_and_log(cell, number_set_to_number[possible_number_set]);
           changed++;
         } else {
           // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
@@ -1725,14 +1727,14 @@ int solve_tile_interlock(struct sudoku_board *board)
 static inline
 void solve_hidden_cell(struct sudoku_cell *cell)
 {
-  unsigned int number, available_set;
+  unsigned int number, possible_set;
   struct sudoku_board *board;
   struct sudoku_board *future_board;
 
   board = cell->board_ref;
-  available_set = get_cell_possible_number_set(cell);
+  possible_set = get_cell_possible_number_set(cell);
   for (number=1; number<=9; number++) {
-    if (available_set & NUMBER_TO_SET(number)) {
+    if (possible_set & NUMBER_TO_SET(number)) {
       if (board->debug_level)
         printf("Trying solution [%i,%i] = %i  (level: %i)\n", cell->row, cell->col, number, board->nest_level);
 
@@ -1750,9 +1752,8 @@ void solve_hidden_cell(struct sudoku_cell *cell)
         assert(future_board->solutions_list == NULL);
         assert(future_board->solutions_count == 0);
         add_to_board_solutions_list(board, future_board);
-        // TODO: Return here is we are only looking for one solution and the board is solved
-        //$$$if (is_board_solved(board))
-          //$$$return;
+        if (is_board_solved(board))
+          return;
       } else if (future_board->solutions_list) {
         // Add to list of solutions
         if (board->debug_level >= 1)
@@ -1761,9 +1762,8 @@ void solve_hidden_cell(struct sudoku_cell *cell)
         future_board->solutions_list = NULL;
         future_board->solutions_count = 0;
         destroy_board(&future_board);
-        // TODO: Return here is we are only looking for one solution and the board is solved
-        //$$$if (is_board_solved(board))
-          //$$$return;
+        if (is_board_solved(board))
+          return;
       } else {
         destroy_board(&future_board);
       }
