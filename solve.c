@@ -743,17 +743,18 @@ static
 int propagate_constraints(struct sudoku_board *board)
 {
   unsigned int row, col, tile, index, row_set, col_set, tile_set, index_set;
-  int changed, changed_total;
+  int changed;
   struct sudoku_cell *cell;
   unsigned int number;
 
   if (board->debug_level >= 2)
     printf("  Propagate constraints\n");
 
-  changed_total = 0;
-  do {
-    changed = 0;
+  if (board->row_dirty_set == 0)
+    return 0;
 
+  changed = 0;
+  do {
     // Loop over all empty cells on dirty rows by going row by row and col by col
     row_set = board->row_empty_set & board->row_dirty_set;
     board->row_dirty_set = 0;
@@ -816,11 +817,9 @@ int propagate_constraints(struct sudoku_board *board)
         }
       }
     }
+  } while ((board->row_dirty_set | board->col_dirty_set | board->tile_dirty_set) && !is_board_done(board));
 
-    changed_total += changed;
-  } while (changed && !is_board_done(board));
-
-  return changed_total;
+  return changed;
 }
 
 
@@ -1927,10 +1926,8 @@ int solve(struct sudoku_board *board)
   if (!is_board_done(board))
     solve_tile_interlock(board);   
 
-#if 0
   if (!is_board_done(board)) 
     solve_hidden(board);
-#endif
 
   solutions_count = board->solutions_count;
   if (board->undetermined_count == 0)
