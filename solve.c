@@ -419,34 +419,37 @@ int reserve_cell_and_log(struct sudoku_cell *cell, unsigned int number_set, cons
 static inline
 int reserve_row_in_tile(struct sudoku_cell *possible_cell, unsigned int number_set)
 {
-  int row, col, my_row, my_tile, changed;
+  unsigned int index, index_set, my_row, my_tile;
   unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
+  int changed;
 
   changed = 0;
   my_row = possible_cell->row;
   my_tile = possible_cell->tile;
   board = possible_cell->board_ref;
-  for (row=0; row<9; row++) {
-    for (col=0; col<9; col++) {
-      cell = &board->cells[row][col];
-      if ((cell->tile == my_tile) && (cell->number == 0)) {
-        possible_set = get_cell_possible_number_set(cell);
-        if (possible_set & number_set) {
-          // The number is a possibility for this cell
-          if (cell->row == my_row) {
-            // This is my tile and my row so include the number in the reservation
-            reserve_number_set = possible_set;
-          } else {
-            // This is my tile but not my row so exclude the number in the reservation
-            reserve_number_set = possible_set & (~number_set);
-          }
 
-          // Make the reservation
-          changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_row_in_tile");
-        }
+  // Loop over all index in my_tile with empty cells
+  index_set = board->tile_cell_empty_set[my_tile];
+  while (index_set) {
+    index = get_next_index_from_set(&index_set);
+    cell = board->tile_ref[my_tile][index];
+    assert((cell->tile == my_tile) && (cell->number == 0));
+    
+    possible_set = get_cell_possible_number_set(cell);
+    if (possible_set & number_set) {
+      // The number is a possibility for this cell
+      if (cell->row == my_row) {
+        // This is my tile and my row so include the number in the reservation
+        reserve_number_set = possible_set;
+      } else {
+        // This is my tile but not my row so exclude the number in the reservation
+        reserve_number_set = possible_set & (~number_set);
       }
+
+      // Make the reservation
+      changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_row_in_tile");
     }
   }
 
@@ -457,34 +460,37 @@ int reserve_row_in_tile(struct sudoku_cell *possible_cell, unsigned int number_s
 static inline
 int reserve_col_in_tile(struct sudoku_cell *possible_cell, unsigned int number_set)
 {
-  int row, col, my_col, my_tile, changed;
+  unsigned int index, index_set, my_col, my_tile;
   unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
+  int changed;
 
   changed = 0;
   my_col = possible_cell->col;
   my_tile = possible_cell->tile;
   board = possible_cell->board_ref;
-  for (row=0; row<9; row++) {
-    for (col=0; col<9; col++) {
-      cell = &board->cells[row][col];
-      if ((cell->tile == my_tile) && (cell->number == 0)) {
-        possible_set = get_cell_possible_number_set(cell);
-        if (possible_set & number_set) {
-          // The number is a possibility for this cell
-          if (cell->col == my_col) {
-            // This is my tile and my row so include the number in the reservation
-            reserve_number_set = possible_set;
-          } else {
-            // This is my tile but not my row so exclude the number in the reservation
-            reserve_number_set = possible_set & (~number_set);
-          }
 
-          // Make the reservation
-          changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_col_in_tile");
-        }
+  // Loop over all index in my_tile with empty cells
+  index_set = board->tile_cell_empty_set[my_tile];
+  while (index_set) {
+    index = get_next_index_from_set(&index_set);
+    cell = board->tile_ref[my_tile][index];
+    assert((cell->tile == my_tile) && (cell->number == 0));
+
+    possible_set = get_cell_possible_number_set(cell);
+    if (possible_set & number_set) {
+      // The number is a possibility for this cell
+      if (cell->col == my_col) {
+        // This is my tile and my row so include the number in the reservation
+        reserve_number_set = possible_set;
+      } else {
+        // This is my tile but not my row so exclude the number in the reservation
+        reserve_number_set = possible_set & (~number_set);
       }
+
+      // Make the reservation
+      changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_col_in_tile");
     }
   }
 
@@ -512,6 +518,7 @@ int reserve_tile_in_row(struct sudoku_cell *possible_cell, unsigned int number_s
     col = get_next_index_from_set(&col_set);
     cell = &board->cells[my_row][col];
     assert(cell->number == 0);  
+
     possible_set = get_cell_possible_number_set(cell);
     if (possible_set & number_set) {
       // The number is a possibility for this cell
@@ -552,6 +559,7 @@ int reserve_tile_in_col(struct sudoku_cell *possible_cell, unsigned int number_s
     row = get_next_index_from_set(&row_set);
     cell = &board->cells[row][my_col];
     assert(cell->number == 0); 
+
     possible_set = get_cell_possible_number_set(cell);
     if (possible_set & number_set) {
       // The number is a possibility for this cell
@@ -575,26 +583,31 @@ int reserve_tile_in_col(struct sudoku_cell *possible_cell, unsigned int number_s
 static inline
 int reserve_cells_with_index_in_tile(struct sudoku_cell *possible_cell, unsigned int possible_index_set, unsigned int number_set)
 {
-  int my_tile, i, changed;
+  unsigned int my_tile, index, index_set, i;
   unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
+  int changed;
 
   changed = 0;
   my_tile = possible_cell->tile;
   board = possible_cell->board_ref;
-  for (i=0; i<9; i++) {
-    cell = board->tile_ref[my_tile][i];
-    if (cell->number == 0) {
-      possible_set = get_cell_possible_number_set(cell);
-      if (possible_set & number_set) {
-        if (INDEX_TO_SET(i) & possible_index_set) 
-          reserve_number_set = possible_set;
-        else 
-          reserve_number_set = possible_set & (~number_set);
-        
-       changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_cells_with_index_in_tile");
-      }
+
+  // Loop over all index in my_tile with empty cells
+  index_set = board->tile_cell_empty_set[my_tile];
+  while (index_set) {
+    index = get_next_index_from_set(&index_set);
+    cell = board->tile_ref[my_tile][index];
+    assert(cell->number == 0);
+
+    possible_set = get_cell_possible_number_set(cell);
+    if (possible_set & number_set) {
+      if (INDEX_TO_SET(index) & possible_index_set) 
+        reserve_number_set = possible_set;
+      else 
+        reserve_number_set = possible_set & (~number_set);
+      
+      changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_cells_with_index_in_tile");
     }
   }
 
@@ -623,31 +636,36 @@ int reserve_cells_with_index_in_tile(struct sudoku_cell *possible_cell, unsigned
 static inline
 int reserve_cells_with_index_in_row(struct sudoku_cell *possible_cell, unsigned int possible_index_set, unsigned int number_set)
 {
-  int my_row, col, changed, i;
+  unsigned int my_row, col, col_set, i;
   unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
+  int changed;
 
   changed = 0;
   my_row = possible_cell->row;
   board = possible_cell->board_ref;
-  for (col=0; col<9; col++) {
-    cell = &board->cells[my_row][col];
-    if (cell->number == 0) {
-      possible_set = get_cell_possible_number_set(cell);
-      if (possible_set & number_set) {
-        // The number is a possibility for this cell
-        if (INDEX_TO_SET(col) & possible_index_set) {
-          // This is cell so include the number in the reservation
-          reserve_number_set = possible_set;
-        } else {
-          // This is not mmy cell so exclude the number in the reservation
-          reserve_number_set = possible_set & (~number_set);
-        }
 
-        // Make the reservation
-        changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_cells_with_index_in_row");
+  // Loop over all cols in my_row with empty cells
+  col_set = board->row_cell_empty_set[my_row];
+  while (col_set) {
+    col = get_next_index_from_set(&col_set);
+    cell = &board->cells[my_row][col];
+    assert(cell->number == 0); 
+
+    possible_set = get_cell_possible_number_set(cell);
+    if (possible_set & number_set) {
+      // The number is a possibility for this cell
+      if (INDEX_TO_SET(col) & possible_index_set) {
+        // This is cell so include the number in the reservation
+        reserve_number_set = possible_set;
+      } else {
+        // This is not mmy cell so exclude the number in the reservation
+        reserve_number_set = possible_set & (~number_set);
       }
+
+      // Make the reservation
+      changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_cells_with_index_in_row");
     }
   }
 
@@ -666,32 +684,37 @@ int reserve_cells_with_index_in_row(struct sudoku_cell *possible_cell, unsigned 
 static inline
 int reserve_cells_with_index_in_col(struct sudoku_cell *possible_cell, unsigned int possible_index_set, unsigned int number_set)
 {
-  int row, my_col, my_tile, changed, i;
+  unsigned int row, row_set, my_col, my_tile, i;
   unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
+  int changed;
 
   changed = 0;
   my_col = possible_cell->col;
   my_tile = possible_cell->tile;
   board = possible_cell->board_ref;
-  for (row=0; row<9; row++) {
-    cell = &board->cells[row][my_col];
-    if (cell->number == 0) {
-      possible_set = get_cell_possible_number_set(cell);
-      if (possible_set & number_set) {
-        // The number is a possibility for this cell
-        if (INDEX_TO_SET(row) & possible_index_set) {
-          // This is cell so include the number in the reservation
-          reserve_number_set = possible_set;
-        } else {
-          // This is not mmy cell so exclude the number in the reservation
-          reserve_number_set = possible_set & (~number_set);
-        }
 
-        // Make the reservation
-        changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_cells_with_index_in_col");
+  // Loop over all rows in my_col with empty cells
+  row_set = board->col_cell_empty_set[my_col];
+  while (row_set) {
+    row = get_next_index_from_set(&row_set);
+    cell = &board->cells[row][my_col];
+    assert(cell->number == 0);
+
+    possible_set = get_cell_possible_number_set(cell);
+    if (possible_set & number_set) {
+      // The number is a possibility for this cell
+      if (INDEX_TO_SET(row) & possible_index_set) {
+        // This is cell so include the number in the reservation
+        reserve_number_set = possible_set;
+      } else {
+        // This is not mmy cell so exclude the number in the reservation
+        reserve_number_set = possible_set & (~number_set);
       }
+
+      // Make the reservation
+      changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_cells_with_index_in_col");
     }
   }
 
