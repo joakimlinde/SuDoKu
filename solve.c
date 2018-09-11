@@ -495,32 +495,36 @@ int reserve_col_in_tile(struct sudoku_cell *possible_cell, unsigned int number_s
 static inline
 int reserve_tile_in_row(struct sudoku_cell *possible_cell, unsigned int number_set)
 {
-  int my_row, col, my_tile, changed;
+  unsigned int my_row, col, col_set, my_tile;
   unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
+  int changed;
 
   changed = 0;
   my_row = possible_cell->row;
   my_tile = possible_cell->tile;
   board = possible_cell->board_ref;
-  for (col=0; col<9; col++) {
-    cell = &board->cells[my_row][col];
-    if (cell->number == 0) {
-      possible_set = get_cell_possible_number_set(cell);
-      if (possible_set & number_set) {
-        // The number is a possibility for this cell
-        if (cell->tile == my_tile) {
-          // This is my tile and my row so include the number in the reservation
-          reserve_number_set = possible_set;
-        } else {
-          // This is my tile but not my row so exclude the number in the reservation
-          reserve_number_set = possible_set & (~number_set);
-        }
 
-        // Make the reservation
-        changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_tile_in_row");
+  // Loop over all cols in my_row with empty cells
+  col_set = board->row_cell_empty_set[my_row];
+  while (col_set) {
+    col = get_next_index_from_set(&col_set);
+    cell = &board->cells[my_row][col];
+    assert(cell->number == 0);  
+    possible_set = get_cell_possible_number_set(cell);
+    if (possible_set & number_set) {
+      // The number is a possibility for this cell
+      if (cell->tile == my_tile) {
+        // This is my tile and my row so include the number in the reservation
+        reserve_number_set = possible_set;
+      } else {
+        // This is my tile but not my row so exclude the number in the reservation
+        reserve_number_set = possible_set & (~number_set);
       }
+
+      // Make the reservation
+      changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_tile_in_row");
     }
   }
 
@@ -531,32 +535,36 @@ int reserve_tile_in_row(struct sudoku_cell *possible_cell, unsigned int number_s
 static inline
 int reserve_tile_in_col(struct sudoku_cell *possible_cell, unsigned int number_set)
 {
-  int row, my_col, my_tile, changed;
+  unsigned int row, row_set, my_col, my_tile;
   unsigned int reserve_number_set, possible_set;
   struct sudoku_board *board;
   struct sudoku_cell *cell;
+  int changed;
 
   changed = 0;
   my_col = possible_cell->col;
   my_tile = possible_cell->tile;
   board = possible_cell->board_ref;
-  for (row=0; row<9; row++) {
-    cell = &board->cells[row][my_col];
-    if (cell->number == 0) {
-      possible_set = get_cell_possible_number_set(cell);
-      if (possible_set & number_set) {
-        // The number is a possibility for this cell
-        if (cell->tile == my_tile) {
-          // This is my tile and my row so include the number in the reservation
-          reserve_number_set = possible_set;
-        } else {
-          // This is my tile but not my row so exclude the number in the reservation
-          reserve_number_set = possible_set & (~number_set);
-        }
 
-        // Make the reservation
-        changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_tile_in_col");
+  // Loop over all rows in my_col with empty cells
+  row_set = board->col_cell_empty_set[my_col];
+  while (row_set) {
+    row = get_next_index_from_set(&row_set);
+    cell = &board->cells[row][my_col];
+    assert(cell->number == 0); 
+    possible_set = get_cell_possible_number_set(cell);
+    if (possible_set & number_set) {
+      // The number is a possibility for this cell
+      if (cell->tile == my_tile) {
+        // This is my tile and my row so include the number in the reservation
+        reserve_number_set = possible_set;
+      } else {
+        // This is my tile but not my row so exclude the number in the reservation
+        reserve_number_set = possible_set & (~number_set);
       }
+
+      // Make the reservation
+      changed += reserve_cell_and_log(cell, reserve_number_set, "reserve_tile_in_col");
     }
   }
 
