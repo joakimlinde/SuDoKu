@@ -201,6 +201,13 @@ void mark_cell_dirty(struct sudoku_cell *cell)
 }
 
 
+static inline 
+int is_board_dirty(struct sudoku_board *board) {
+  // No need to check col and tiles - row always marked dirty
+  return board->row_dirty_set;
+};
+
+
 static inline
 void mark_cell_not_empty(struct sudoku_cell *cell)
 {
@@ -379,12 +386,14 @@ int reserve_cell(struct sudoku_cell *cell, unsigned int number_set)
 
     if (new_reserved_for_number_set && (cell->reserved_for_number_set != new_reserved_for_number_set)) {
       cell->reserved_for_number_set = new_reserved_for_number_set;
-      mark_cell_dirty(cell);
+      if (bit_count[new_reserved_for_number_set] == 1)
+        mark_cell_dirty(cell);
       changed = 1;
     }
   } else {
     cell->reserved_for_number_set = number_set;
-    mark_cell_dirty(cell);
+    if (bit_count[number_set] == 1)
+      mark_cell_dirty(cell);
     changed = 1;
   }
 
@@ -734,18 +743,15 @@ static
 int propagate_constraints(struct sudoku_board *board)
 {
   unsigned int row, col, tile, index, row_set, col_set, tile_set, index_set;
-  int round, changed, changed_total;
+  int changed, changed_total;
   struct sudoku_cell *cell;
   unsigned int number;
 
   if (board->debug_level >= 2)
-    printf("Propagate constraints\n");
+    printf("  Propagate constraints\n");
 
   changed_total = 0;
-  round = 0;
   do {
-    if (board->debug_level >= 2)
-      printf("  Round %i\n", round++);
     changed = 0;
 
     // Loop over all empty cells on dirty rows by going row by row and col by col
@@ -1125,6 +1131,9 @@ int solve_eliminate_tiles_1(struct sudoku_board *board)
         }
       }
     }
+
+    if (is_board_dirty(board))
+      changed += propagate_constraints(board);
   }
 
   return changed;
@@ -1256,6 +1265,9 @@ int solve_eliminate_rows_1(struct sudoku_board *board)
         }
       }
     }
+
+    if (is_board_dirty(board))
+      changed += propagate_constraints(board);
   }
 
   return changed;
@@ -1387,6 +1399,9 @@ int solve_eliminate_cols_1(struct sudoku_board *board)
         }
       }
     }
+
+    if (is_board_dirty(board))
+      changed += propagate_constraints(board);
   }
 
   return changed;
@@ -1502,6 +1517,9 @@ int solve_eliminate_tiles_2(struct sudoku_board *board)
                                                       "solve_eliminate_tiles_2");
       }
     }
+
+    if (is_board_dirty(board))
+      changed += propagate_constraints(board);
   }
 
   return changed;
@@ -1560,6 +1578,9 @@ int solve_eliminate_rows_2(struct sudoku_board *board)
                                                       "solve_eliminate_rows_2");
       }
     }
+
+    if (is_board_dirty(board))
+      changed += propagate_constraints(board);
   }
 
   return changed;
@@ -1618,6 +1639,9 @@ int solve_eliminate_cols_2(struct sudoku_board *board)
                                                       "solve_eliminate_cols_2");
       }
     }
+
+    if (is_board_dirty(board))
+      changed += propagate_constraints(board);
   }
 
   return changed;
@@ -1649,10 +1673,8 @@ int solve_eliminate(struct sudoku_board *board)
 
     for(i=0; i<(sizeof(solve_func_arr)/sizeof(solve_func_arr[0])); i++) {
       this_changed = solve_func_arr[i](board);
-      if (is_board_done(board))
-        break;
       if (this_changed) {
-        changed += this_changed + propagate_constraints(board);
+        changed += this_changed;
         if (is_board_done(board))
           break;
       }
