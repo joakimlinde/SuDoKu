@@ -955,7 +955,8 @@ int solve_eliminate_tiles_1(struct sudoku_board *board)
 {
   struct sudoku_cell *cell, *possible_cell;
   unsigned int tile, index, tile_set, index_set, i, j, possibilities, same_index_set_count;
-  unsigned int number, number_set, reserve_number_set, this_reserve_number_set, possible_index_set;
+  unsigned int number, number_set, remaining_number_set;
+  unsigned int reserve_number_set, this_reserve_number_set, possible_index_set;
   unsigned int prior_possible_index_set[9];
   int changed;
 
@@ -968,123 +969,125 @@ int solve_eliminate_tiles_1(struct sudoku_board *board)
     tile = get_next_index_from_set(&tile_set);
     if (board->debug_level >= 2)
       printf("  Tile %i\n", tile);
-    for (number=1; number<=9; number++) {
+
+    zero_array_9(prior_possible_index_set);
+    remaining_number_set = (~(board->tile_number_taken_set[tile]) & NUMBER_SET_MASK);
+    while (remaining_number_set) {
+      number = get_next_index_from_set(&remaining_number_set);
+      number_set = NUMBER_TO_SET(number);
       if (board->debug_level >= 2)
         printf("    Number %i\n", number);
-      number_set = NUMBER_TO_SET(number);
-      prior_possible_index_set[number-1] = 0;
 
       // Check if number is already taken in this tile. If so, skip the number!
-      if (!(board->tile_number_taken_set[tile] & number_set)) {
-        possibilities = 0;
-        possible_cell = 0;
-        possible_index_set = 0;
+      assert(!(board->tile_number_taken_set[tile] & number_set));
+      possibilities = 0;
+      possible_cell = 0;
+      possible_index_set = 0;
 
-        // Go through all possible positions for Number
-        index_set = board->tile_cell_empty_set[tile];
-        while (index_set) {
-          index = get_next_index_from_set(&index_set);
-          cell = board->tile_ref[tile][index];
-          assert(cell->number == 0);
-          // The cell is empty - can we put Number in this cell?
-          if (get_cell_possible_number_set(cell) & number_set) {
-            possibilities++;
-            possible_cell = cell;
-            possible_index_set |= NUMBER_TO_SET(index);
+      // Go through all possible positions for Number
+      index_set = board->tile_cell_empty_set[tile];
+      while (index_set) {
+        index = get_next_index_from_set(&index_set);
+        cell = board->tile_ref[tile][index];
+        assert(cell->number == 0);
+        // The cell is empty - can we put Number in this cell?
+        if (get_cell_possible_number_set(cell) & number_set) {
+          possibilities++;
+          possible_cell = cell;
+          possible_index_set |= NUMBER_TO_SET(index);
 
-            if (board->debug_level >= 4)
-              printf(DINDENT "Possible [%i,%i] avail_set: 0x%X <> 0x%X cell_number: %i\n", 
-                     cell->row, cell->col, get_cell_possible_number_set(cell), number_set, cell->number);
+          if (board->debug_level >= 4)
+            printf(DINDENT "Possible [%i,%i] avail_set: 0x%X <> 0x%X cell_number: %i\n", 
+                    cell->row, cell->col, get_cell_possible_number_set(cell), number_set, cell->number);
+        }
+      }
+
+      if (board->debug_level >= 4) {
+        printf(DINDENT "Tile: %i, Number: %i, possibilities: %i, possible_index_set is ", tile, number, possibilities);
+        for(int i=0; i<9; i++)
+          if (possible_index_set & NUMBER_TO_SET(i))
+            printf("%i ", i);
+        printf("\n");
+      }
+
+      // Do we have any possibilities
+      if (possibilities == 0) {
+        // Board is dead
+        set_board_dead(board, __func__);
+        return 0;
+      } else if (possibilities == 1) {
+        // We have one and only one possible - set it!
+        set_cell_number_and_log(possible_cell, number);
+        changed++;
+      } else {
+        // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
+        prior_possible_index_set[number-1] = possible_index_set;
+        same_index_set_count = 0;
+
+        // Initialise the reserve_number_set with the current number, then add the others in the following loop
+        reserve_number_set = NUMBER_TO_SET(number);
+
+        for (i=0; i<(number-1); i++) {
+          if (prior_possible_index_set[i] == possible_index_set) {
+            same_index_set_count++;
+            // The Number is i+1 here - yes, weird!
+            reserve_number_set |= NUMBER_TO_SET(i+1);
           }
         }
 
-        if (board->debug_level >= 4) {
-          printf(DINDENT "Tile: %i, Number: %i, possibilities: %i, possible_index_set is ", tile, number, possibilities);
-          for(int i=0; i<9; i++)
-            if (possible_index_set & NUMBER_TO_SET(i))
-              printf("%i ", i);
-          printf("\n");
+        // Do we have other Numbers with the same possibilies
+        if ((same_index_set_count+1) == possibilities) {
+          // Reserve these possibilities - include current number in this loop
+          for (index=0; index<9; index++) {
+            if (NUMBER_TO_SET(index) & possible_index_set) {
+              // Finally - Reserve!!!
+              changed += reserve_cell_and_log(board->tile_ref[tile][index], reserve_number_set, "solve_eliminate_tiles (complete)");        
+            }
+          }
         }
 
-        // Do we have any possibilities
-        if (possibilities == 0) {
-          // Board is dead
-          set_board_dead(board, __func__);
-          return 0;
-        } else if (possibilities == 1) {
-          // We have one and only one possible - set it!
-          set_cell_number_and_log(possible_cell, number);
-          changed++;
-        } else {
-          // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
-          prior_possible_index_set[number-1] = possible_index_set;
-          same_index_set_count = 0;
-
-          // Initialise the reserve_number_set with the current number, then add the others in the following loop
-          reserve_number_set = NUMBER_TO_SET(number);
-
+        if (possibilities <= 3) {
+          // Now look at partial matches so we can catch {12}, {23}, {13} or {12}, {23}, {123}
           for (i=0; i<(number-1); i++) {
-            if (prior_possible_index_set[i] == possible_index_set) {
-              same_index_set_count++;
-              // The Number is i+1 here - yes, weird!
-              reserve_number_set |= NUMBER_TO_SET(i+1);
-            }
-          }
+            // Is there any overlap with a previos set
+            if (prior_possible_index_set[i] & possible_index_set) {
+              // We have overlap - does this overlap takes us to 3
+              index_set = prior_possible_index_set[i] | possible_index_set;
+              if (bit_count[index_set] == 3) {
+                // Look for a third that is within this set
+                for (j=(i+1); j<(number-1); j++) {
+                  if (prior_possible_index_set[j] && ((index_set | prior_possible_index_set[j]) == index_set)) {
+                    // Now we have the three numbers (i+1, j+1, number) that go into index_set
+                    reserve_number_set = NUMBER_TO_SET(i+1) | NUMBER_TO_SET(j+1) | NUMBER_TO_SET(number);
 
-          // Do we have other Numbers with the same possibilies
-          if ((same_index_set_count+1) == possibilities) {
-            // Reserve these possibilities - include current number in this loop
-            for (index=0; index<9; index++) {
-              if (NUMBER_TO_SET(index) & possible_index_set) {
-                // Finally - Reserve!!!
-                changed += reserve_cell_and_log(board->tile_ref[tile][index], reserve_number_set, "solve_eliminate_tiles (complete)");        
-              }
-            }
-          }
-
-          if (possibilities <= 3) {
-            // Now look at partial matches so we can catch {12}, {23}, {13} or {12}, {23}, {123}
-            for (i=0; i<(number-1); i++) {
-              // Is there any overlap with a previos set
-              if (prior_possible_index_set[i] & possible_index_set) {
-                // We have overlap - does this overlap takes us to 3
-                index_set = prior_possible_index_set[i] | possible_index_set;
-                if (bit_count[index_set] == 3) {
-                  // Look for a third that is within this set
-                  for (j=(i+1); j<(number-1); j++) {
-                    if (prior_possible_index_set[j] && ((index_set | prior_possible_index_set[j]) == index_set)) {
-                      // Now we have the three numbers (i+1, j+1, number) that go into index_set
-                      reserve_number_set = NUMBER_TO_SET(i+1) | NUMBER_TO_SET(j+1) | NUMBER_TO_SET(number);
-
-                      // Reserve these possibilities - include current number in this loop
-                      for (index=0; index<9; index++) {
-                        if (NUMBER_TO_SET(index) & index_set) {
-                          // Finally - Reserve!!!
-                          this_reserve_number_set = reserve_number_set & get_cell_possible_number_set(board->tile_ref[tile][index]);
-                          changed += reserve_cell_and_log(board->tile_ref[tile][index], this_reserve_number_set, "solve_eliminate_tiles (partial)");        
-                        }
+                    // Reserve these possibilities - include current number in this loop
+                    for (index=0; index<9; index++) {
+                      if (NUMBER_TO_SET(index) & index_set) {
+                        // Finally - Reserve!!!
+                        this_reserve_number_set = reserve_number_set & get_cell_possible_number_set(board->tile_ref[tile][index]);
+                        changed += reserve_cell_and_log(board->tile_ref[tile][index], this_reserve_number_set, "solve_eliminate_tiles (partial)");        
                       }
                     }
                   }
                 }
               }
             }
+          }
 
-            // If all possibilities (=2 or 3) on the same row, if so have the row reserve them
-            for (i=0; i<3; i++) {
-              if ((possible_index_set | index_row_mask[i]) == index_row_mask[i]) {
-                if (reserve_tile_in_row(possible_cell, number_set)) {
-                  changed++;
-                }
+          // If all possibilities (=2 or 3) on the same row, if so have the row reserve them
+          for (i=0; i<3; i++) {
+            if ((possible_index_set | index_row_mask[i]) == index_row_mask[i]) {
+              if (reserve_tile_in_row(possible_cell, number_set)) {
+                changed++;
               }
             }
+          }
 
-            // If all possibilities (=2 or 3) on the same col, if so have the col reserve them
-            for (i=0; i<3; i++) {
-              if ((possible_index_set | index_col_mask[i]) == index_col_mask[i]) {
-                if (reserve_tile_in_col(possible_cell, number_set)) {
-                  changed++;
-                }
+          // If all possibilities (=2 or 3) on the same col, if so have the col reserve them
+          for (i=0; i<3; i++) {
+            if ((possible_index_set | index_col_mask[i]) == index_col_mask[i]) {
+              if (reserve_tile_in_col(possible_cell, number_set)) {
+                changed++;
               }
             }
           }
@@ -1102,7 +1105,8 @@ int solve_eliminate_rows_1(struct sudoku_board *board)
 {
   struct sudoku_cell *cell, *possible_cell;
   unsigned int row, col, row_set, col_set, i, j, possibilities, same_index_set_count;  
-  unsigned int number, number_set, reserve_number_set, this_reserve_number_set, possible_index_set, index_set;
+  unsigned int number, number_set, remaining_number_set;
+  unsigned int reserve_number_set, this_reserve_number_set, possible_index_set, index_set;
   unsigned int prior_possible_index_set[9];
   int changed;
 
@@ -1116,106 +1120,107 @@ int solve_eliminate_rows_1(struct sudoku_board *board)
     if (board->debug_level >= 2)
       printf("  Row %i\n", row);
 
-    for (number=1; number<=9; number++) {
+    zero_array_9(prior_possible_index_set);
+    remaining_number_set = (~(board->row_number_taken_set[row]) & NUMBER_SET_MASK);
+    while (remaining_number_set) {
+      number = get_next_index_from_set(&remaining_number_set);
+      number_set = NUMBER_TO_SET(number);
       if (board->debug_level >= 2)
         printf("    Number %i\n", number);
-      number_set = NUMBER_TO_SET(number);
-      prior_possible_index_set[number-1] = 0;
 
       // Check if number is already taken in this row. If so, skip the number!
-      if (!(board->row_number_taken_set[row] & number_set)) {
-        possibilities = 0;
-        possible_cell = 0;
-        possible_index_set = 0;
+      assert(!(board->row_number_taken_set[row] & number_set));
+      possibilities = 0;
+      possible_cell = 0;
+      possible_index_set = 0;
 
-        // Go through all possible positions for Number
-        col_set = board->row_cell_empty_set[row];
-        while (col_set) {
-          col = get_next_index_from_set(&col_set);
-          cell = &board->cells[row][col];
-          assert(cell->number == 0);
-          // Is this cell free and can we put Number in this cell?
-          if (get_cell_possible_number_set(cell) & number_set) {
-            possibilities++;
-            possible_cell = cell;
-            possible_index_set |= NUMBER_TO_SET(col);
+      // Go through all possible positions for Number
+      col_set = board->row_cell_empty_set[row];
+      while (col_set) {
+        col = get_next_index_from_set(&col_set);
+        cell = &board->cells[row][col];
+        assert(cell->number == 0);
+        // Is this cell free and can we put Number in this cell?
+        if (get_cell_possible_number_set(cell) & number_set) {
+          possibilities++;
+          possible_cell = cell;
+          possible_index_set |= NUMBER_TO_SET(col);
 
-            if (board->debug_level >= 4)
-              printf(DINDENT "Possible [%i,%i] avail_set: 0x%X <> 0x%X cell_number: %i\n", 
-                     cell->row, cell->col, get_cell_possible_number_set(cell), number_set, cell->number);
+          if (board->debug_level >= 4)
+            printf(DINDENT "Possible [%i,%i] avail_set: 0x%X <> 0x%X cell_number: %i\n", 
+                    cell->row, cell->col, get_cell_possible_number_set(cell), number_set, cell->number);
+        }
+      }
+
+      // Do we have any possibilities
+      if (possibilities == 0) {
+        // Board is dead
+        set_board_dead(board, __func__);
+        return 0;
+      } else if (possibilities == 1) {
+        // We have one and only one possible - set it!
+        set_cell_number_and_log(possible_cell, number);
+        changed++;
+      } else {
+        // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
+        prior_possible_index_set[number-1] = possible_index_set;
+        same_index_set_count = 0;
+
+        // Initialise the reserve_number_set with the current number, then add the others in the following loop
+        reserve_number_set = NUMBER_TO_SET(number);
+
+        for (i=0; i<(number-1); i++) {
+          if (prior_possible_index_set[i] == possible_index_set) {
+            same_index_set_count++;
+            // The Number is i+1 here - yes, weird!
+            reserve_number_set |= NUMBER_TO_SET(i+1);
           }
         }
 
-        // Do we have any possibilities
-        if (possibilities == 0) {
-          // Board is dead
-          set_board_dead(board, __func__);
-          return 0;
-        } else if (possibilities == 1) {
-          // We have one and only one possible - set it!
-          set_cell_number_and_log(possible_cell, number);
-          changed++;
-        } else {
-          // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
-          prior_possible_index_set[number-1] = possible_index_set;
-          same_index_set_count = 0;
+        // Do we have other Numbers with the same possibilies
+        if ((same_index_set_count+1) == possibilities) {
+          // Reserve these possibilities - include current number in this loop
+          for (col=0; col<9; col++) {
+            if (NUMBER_TO_SET(col) & possible_index_set) {
+              // Finally - Reserve!!!
+              changed += reserve_cell_and_log(&board->cells[row][col], reserve_number_set, "solve_eliminate_rows");
+            }
+          }
+        }
 
-          // Initialise the reserve_number_set with the current number, then add the others in the following loop
-          reserve_number_set = NUMBER_TO_SET(number);
-
+        if (possibilities <= 3) {
+          // Now look at partial matches so we can catch {12}, {23}, {13} or {12}, {23}, {123}
           for (i=0; i<(number-1); i++) {
-            if (prior_possible_index_set[i] == possible_index_set) {
-              same_index_set_count++;
-              // The Number is i+1 here - yes, weird!
-              reserve_number_set |= NUMBER_TO_SET(i+1);
-            }
-          }
+            // Is there any overlap with a previos set
+            if (prior_possible_index_set[i] & possible_index_set) {
+              // We have overlap - does this overlap takes us to 3
+              index_set = prior_possible_index_set[i] | possible_index_set;
+              if (bit_count[index_set] == 3) {
+                // Look for a third that is within this set
+                for (j=(i+1); j<(number-1); j++) {
+                  if (prior_possible_index_set[j] && ((index_set | prior_possible_index_set[j]) == index_set)) {
+                    // Now we have the three numbers (i+1, j+1, number) that go into index_set
+                    reserve_number_set = NUMBER_TO_SET(i+1) | NUMBER_TO_SET(j+1) | NUMBER_TO_SET(number);
 
-          // Do we have other Numbers with the same possibilies
-          if ((same_index_set_count+1) == possibilities) {
-            // Reserve these possibilities - include current number in this loop
-            for (col=0; col<9; col++) {
-              if (NUMBER_TO_SET(col) & possible_index_set) {
-                // Finally - Reserve!!!
-                changed += reserve_cell_and_log(&board->cells[row][col], reserve_number_set, "solve_eliminate_rows");
-              }
-            }
-          }
-
-          if (possibilities <= 3) {
-            // Now look at partial matches so we can catch {12}, {23}, {13} or {12}, {23}, {123}
-            for (i=0; i<(number-1); i++) {
-              // Is there any overlap with a previos set
-              if (prior_possible_index_set[i] & possible_index_set) {
-                // We have overlap - does this overlap takes us to 3
-                index_set = prior_possible_index_set[i] | possible_index_set;
-                if (bit_count[index_set] == 3) {
-                  // Look for a third that is within this set
-                  for (j=(i+1); j<(number-1); j++) {
-                    if (prior_possible_index_set[j] && ((index_set | prior_possible_index_set[j]) == index_set)) {
-                      // Now we have the three numbers (i+1, j+1, number) that go into index_set
-                      reserve_number_set = NUMBER_TO_SET(i+1) | NUMBER_TO_SET(j+1) | NUMBER_TO_SET(number);
-
-                      // Reserve these possibilities - include current number in this loop
-                      for (col=0; col<9; col++) {
-                        if (NUMBER_TO_SET(col) & index_set) {
-                          // Finally - Reserve!!!
-                          this_reserve_number_set = reserve_number_set & get_cell_possible_number_set(&board->cells[row][col]);
-                          changed += reserve_cell_and_log(&board->cells[row][col], this_reserve_number_set, "solve_eliminate_rows (partial)");
-                        }
+                    // Reserve these possibilities - include current number in this loop
+                    for (col=0; col<9; col++) {
+                      if (NUMBER_TO_SET(col) & index_set) {
+                        // Finally - Reserve!!!
+                        this_reserve_number_set = reserve_number_set & get_cell_possible_number_set(&board->cells[row][col]);
+                        changed += reserve_cell_and_log(&board->cells[row][col], this_reserve_number_set, "solve_eliminate_rows (partial)");
                       }
                     }
                   }
                 }
               }
             }
+          }
 
-            // If all possibilities (=2 or 3) in the same tile, if so have the tile reserve them
-            for (i=0; i<3; i++) {
-              if ((possible_index_set | index_tile_mask[i]) == index_tile_mask[i])
-                if (reserve_row_in_tile(possible_cell, number_set))
-                  changed++;
-            }
+          // If all possibilities (=2 or 3) in the same tile, if so have the tile reserve them
+          for (i=0; i<3; i++) {
+            if ((possible_index_set | index_tile_mask[i]) == index_tile_mask[i])
+              if (reserve_row_in_tile(possible_cell, number_set))
+                changed++;
           }
         }
       }
@@ -1231,7 +1236,8 @@ int solve_eliminate_cols_1(struct sudoku_board *board)
 {
   struct sudoku_cell *cell, *possible_cell;
   unsigned int row, col, row_set, col_set, i, j, possibilities, same_index_set_count;
-  unsigned int number, number_set, reserve_number_set, this_reserve_number_set, possible_index_set, index_set;
+  unsigned int number, number_set, remaining_number_set;
+  unsigned int reserve_number_set, this_reserve_number_set, possible_index_set, index_set;
   unsigned int prior_possible_index_set[9];
   int changed;
 
@@ -1245,106 +1251,107 @@ int solve_eliminate_cols_1(struct sudoku_board *board)
     if (board->debug_level >= 2)
       printf("  Col %i\n", col);
 
-    for (number=1; number<=9; number++) {
+    zero_array_9(prior_possible_index_set);
+    remaining_number_set = (~(board->col_number_taken_set[col]) & NUMBER_SET_MASK);
+    while (remaining_number_set) {
+      number = get_next_index_from_set(&remaining_number_set);
+      number_set = NUMBER_TO_SET(number);
       if (board->debug_level >= 2)
         printf("    Number %i\n", number);
-      number_set = NUMBER_TO_SET(number);
-      prior_possible_index_set[number-1] = 0;
 
       // Check if number is already taken in this column. If so, skip the number!
-      if (!(board->col_number_taken_set[col] & number_set)) {
-        possibilities = 0;
-        possible_cell = 0;
-        possible_index_set = 0;
+      assert(!(board->col_number_taken_set[col] & number_set));
+      possibilities = 0;
+      possible_cell = 0;
+      possible_index_set = 0;
 
-        // Go through all possible positions for Number
-        row_set = board->col_cell_empty_set[col];
-        while (row_set) {
-          row = get_next_index_from_set(&row_set);
-          cell = &board->cells[row][col];
-          assert(cell->number == 0);
-          // This cell is free - can we put Number in this cell?
-          if (get_cell_possible_number_set(cell) & number_set) {
-            possibilities++;
-            possible_cell = cell;
-            possible_index_set |= NUMBER_TO_SET(row);
+      // Go through all possible positions for Number
+      row_set = board->col_cell_empty_set[col];
+      while (row_set) {
+        row = get_next_index_from_set(&row_set);
+        cell = &board->cells[row][col];
+        assert(cell->number == 0);
+        // This cell is free - can we put Number in this cell?
+        if (get_cell_possible_number_set(cell) & number_set) {
+          possibilities++;
+          possible_cell = cell;
+          possible_index_set |= NUMBER_TO_SET(row);
 
-            if (board->debug_level >= 4)
-              printf(DINDENT "Possible [%i,%i] avail_set: 0x%X <> 0x%X cell_number: %i\n", 
-                     cell->row, cell->col, get_cell_possible_number_set(cell), number_set, cell->number);
+          if (board->debug_level >= 4)
+            printf(DINDENT "Possible [%i,%i] avail_set: 0x%X <> 0x%X cell_number: %i\n", 
+                    cell->row, cell->col, get_cell_possible_number_set(cell), number_set, cell->number);
+        }
+      }
+
+      // Do we have any possibilities
+      if (possibilities == 0) {
+        // Board is dead
+        set_board_dead(board, __func__);
+        return 0;
+      } else if (possibilities == 1) {
+        // We have one and only one possible - set it!
+        set_cell_number_and_log(possible_cell, number);
+        changed++;
+      } else {
+        // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
+        prior_possible_index_set[number-1] = possible_index_set;
+        same_index_set_count = 0;
+
+        // Initialise the reserve_number_set with the current number, then add the others in the following loop
+        reserve_number_set = NUMBER_TO_SET(number);
+
+        for (i=0; i<(number-1); i++) {
+          if (prior_possible_index_set[i] == possible_index_set) {
+            same_index_set_count++;
+            // The Number is i+1 here - yes, weird!
+            reserve_number_set |= NUMBER_TO_SET(i+1);
           }
         }
 
-        // Do we have any possibilities
-        if (possibilities == 0) {
-          // Board is dead
-          set_board_dead(board, __func__);
-          return 0;
-        } else if (possibilities == 1) {
-          // We have one and only one possible - set it!
-          set_cell_number_and_log(possible_cell, number);
-          changed++;
-        } else {
-          // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
-          prior_possible_index_set[number-1] = possible_index_set;
-          same_index_set_count = 0;
+        // Do we have other Numbers with the same possibilies
+        if ((same_index_set_count+1) == possibilities) {
+          // Reserve these possibilities - include current number in this loop
+          for (row=0; row<9; row++) {
+            if (NUMBER_TO_SET(row) & possible_index_set) {
+              // Finally - Reserve!!!
+              changed += reserve_cell_and_log(&board->cells[row][col], reserve_number_set, "solve_eliminate_cols (complete)");
+            }
+          }
+        }
 
-          // Initialise the reserve_number_set with the current number, then add the others in the following loop
-          reserve_number_set = NUMBER_TO_SET(number);
-
+        if (possibilities <= 3) {
+          // Now look at partial matches so we can catch {12}, {23}, {13} or {12}, {23}, {123}
           for (i=0; i<(number-1); i++) {
-            if (prior_possible_index_set[i] == possible_index_set) {
-              same_index_set_count++;
-              // The Number is i+1 here - yes, weird!
-              reserve_number_set |= NUMBER_TO_SET(i+1);
-            }
-          }
+            // Is there any overlap with a previos set
+            if (prior_possible_index_set[i] & possible_index_set) {
+              // We have overlap - does this overlap takes us to 3
+              index_set = prior_possible_index_set[i] | possible_index_set;
+              if (bit_count[index_set] == 3) {
+                // Look for a third that is within this set
+                for (j=(i+1); j<(number-1); j++) {
+                  if (prior_possible_index_set[j] && ((index_set | prior_possible_index_set[j]) == index_set)) {
+                    // Now we have the three numbers (i+1, j+1, number) that go into index_set
+                    reserve_number_set = NUMBER_TO_SET(i+1) | NUMBER_TO_SET(j+1) | NUMBER_TO_SET(number);
 
-          // Do we have other Numbers with the same possibilies
-          if ((same_index_set_count+1) == possibilities) {
-            // Reserve these possibilities - include current number in this loop
-            for (row=0; row<9; row++) {
-              if (NUMBER_TO_SET(row) & possible_index_set) {
-                // Finally - Reserve!!!
-                changed += reserve_cell_and_log(&board->cells[row][col], reserve_number_set, "solve_eliminate_cols (complete)");
-              }
-            }
-          }
-
-          if (possibilities <= 3) {
-            // Now look at partial matches so we can catch {12}, {23}, {13} or {12}, {23}, {123}
-            for (i=0; i<(number-1); i++) {
-              // Is there any overlap with a previos set
-              if (prior_possible_index_set[i] & possible_index_set) {
-                // We have overlap - does this overlap takes us to 3
-                index_set = prior_possible_index_set[i] | possible_index_set;
-                if (bit_count[index_set] == 3) {
-                  // Look for a third that is within this set
-                  for (j=(i+1); j<(number-1); j++) {
-                    if (prior_possible_index_set[j] && ((index_set | prior_possible_index_set[j]) == index_set)) {
-                      // Now we have the three numbers (i+1, j+1, number) that go into index_set
-                      reserve_number_set = NUMBER_TO_SET(i+1) | NUMBER_TO_SET(j+1) | NUMBER_TO_SET(number);
-
-                      // Reserve these possibilities - include current number in this loop
-                      for (row=0; row<9; row++) {
-                        if (NUMBER_TO_SET(row) & index_set) {
-                          // Finally - Reserve!!!
-                          this_reserve_number_set = reserve_number_set & get_cell_possible_number_set(&board->cells[row][col]);
-                          changed += reserve_cell_and_log(&board->cells[row][col], this_reserve_number_set, "solve_eliminate_rows (partial)");
-                        }
+                    // Reserve these possibilities - include current number in this loop
+                    for (row=0; row<9; row++) {
+                      if (NUMBER_TO_SET(row) & index_set) {
+                        // Finally - Reserve!!!
+                        this_reserve_number_set = reserve_number_set & get_cell_possible_number_set(&board->cells[row][col]);
+                        changed += reserve_cell_and_log(&board->cells[row][col], this_reserve_number_set, "solve_eliminate_rows (partial)");
                       }
                     }
                   }
                 }
               }
             }
+          }
 
-            // If all possibilities (=2 or 3) in the same tile, if so have the tile reserve them
-            for (i=0; i<3; i++) {
-              if ((possible_index_set | index_tile_mask[i]) == index_tile_mask[i])
-                if (reserve_col_in_tile(possible_cell, number_set))
-                  changed++;
-            }
+          // If all possibilities (=2 or 3) in the same tile, if so have the tile reserve them
+          for (i=0; i<3; i++) {
+            if ((possible_index_set | index_tile_mask[i]) == index_tile_mask[i])
+              if (reserve_col_in_tile(possible_cell, number_set))
+                changed++;
           }
         }
       }
@@ -1417,7 +1424,7 @@ static
 int solve_eliminate_tiles_2(struct sudoku_board *board)
 {
   struct sudoku_cell *cell;
-  unsigned int tile, tile_set, index, possibilities, possible_number_set;
+  unsigned int tile, tile_set, index, index_set, possibilities, possible_number_set;
   unsigned int prior_possible_number_set[9];
   int changed;
 
@@ -1434,33 +1441,34 @@ int solve_eliminate_tiles_2(struct sudoku_board *board)
         print_possible(board, DINDENT);
     }
 
-    for (index=0; index<9; index++) {
+    zero_array_9(prior_possible_number_set);
+    index_set = board->tile_cell_empty_set[tile];
+    while (index_set) {
+      index = get_next_index_from_set(&index_set);
       if (board->debug_level >= 2)
         printf("    Index %i\n", index);
-      prior_possible_number_set[index] = 0;
       cell = board->tile_ref[tile][index];
-      if (cell->number == 0) {
-        possible_number_set = get_cell_possible_number_set(cell);
-        possibilities = bit_count[possible_number_set];
+      assert(cell->number == 0);
+      possible_number_set = get_cell_possible_number_set(cell);
+      possibilities = bit_count[possible_number_set];
 
-        // Do we have any possibilities
-        if (possibilities == 0) {
-          // Board is dead
-          set_board_dead(board, __func__);
-          return 0;
-        } else if (possibilities == 1) {
-          // We have one and only one possible - set it!
-          set_cell_number_and_log(cell, number_set_to_number[possible_number_set]);
-          changed++;
-        } else {
-          // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
-          prior_possible_number_set[index] = possible_number_set;
+      // Do we have any possibilities
+      if (possibilities == 0) {
+        // Board is dead
+        set_board_dead(board, __func__);
+        return 0;
+      } else if (possibilities == 1) {
+        // We have one and only one possible - set it!
+        set_cell_number_and_log(cell, number_set_to_number[possible_number_set]);
+        changed++;
+      } else {
+        // We have multiple possibilities - any other number with same possibilites so we should reserve the combo
+        prior_possible_number_set[index] = possible_number_set;
 
-          changed += find_and_reserve_group_with_index(cell, prior_possible_number_set, 
-                                                       index, possible_number_set, 
-                                                       &reserve_cells_with_index_in_tile,
-                                                       "solve_eliminate_tiles_2");
-        }
+        changed += find_and_reserve_group_with_index(cell, prior_possible_number_set, 
+                                                      index, possible_number_set, 
+                                                      &reserve_cells_with_index_in_tile,
+                                                      "solve_eliminate_tiles_2");
       }
     }
   }
