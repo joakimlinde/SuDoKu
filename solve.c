@@ -21,9 +21,13 @@
 #include <assert.h>
 #include "sudoku.h"
 
+// Defines
+
 #define DINDENT "      "
 
 #define NUMBER_SET_TO_NUMBER(number_set) (number_set_to_number[number_set])
+
+// Constants
 
 static unsigned int number_set_to_number[NUMBER_TO_SET(10)+1];
 static unsigned int bit_count[NUMBER_TO_SET(10)+1];
@@ -50,17 +54,7 @@ static const unsigned int index_col_mask[] = {
   0x124  // 100 100 100
 };
 
-static const unsigned int row_to_tile_mask[] = {
-  0x007, 0x007, 0x007, // 000 000 111
-  0x038, 0x038, 0x038, // 000 111 000
-  0x1C0, 0x1C0, 0x1C0  // 111 000 000
-};
-
-static const unsigned int col_to_tile_mask[] = {
-  0x007, 0x007, 0x007, // 000 000 111
-  0x038, 0x038, 0x038, // 000 111 000
-  0x1C0, 0x1C0, 0x1C0  // 111 000 000
-};
+// Forward declarations
 
 static void print_number_set(unsigned int number_set, const char *postfix);
 
@@ -172,12 +166,6 @@ static inline
 int is_board_done(struct sudoku_board *board)
 {
   return (board->dead || (board->undetermined_count == 0) || (board->solutions_count > 0));
-}
-
-
-static inline
-unsigned int get_empty_cell_count(struct sudoku_board *board) {
-  return (9*9)-board->undetermined_count;
 }
 
 
@@ -823,124 +811,6 @@ int propagate_constraints(struct sudoku_board *board)
 }
 
 
-static inline
-int for_each_empty_cell(struct sudoku_board *board, int (*func)(struct sudoku_cell *cell))
-{
-  unsigned int row, col, row_set, col_set;
-  int result;
-  struct sudoku_cell *cell;
-
-  // Loop over all empty cells by going row by row and then col by col
-  result = 0;
-  row_set = board->row_empty_set;
-  while (row_set) {
-    row = get_next_index_from_set(&row_set);
-    col_set = board->row_cell_empty_set[row];
-    while (col_set) {
-      col = get_next_index_from_set(&col_set);
-      cell = &board->cells[row][col];
-      if (cell->number == 0)
-        result += func(cell);
-    }
-  }
-
-  return result;
-}
-
-
-static inline
-int for_each_dependent_empty_cell(struct sudoku_cell *cell,
-                                  int (*func)(struct sudoku_cell *cell, struct sudoku_cell *from_cell))
-{
-  unsigned row, col, tile, index, row_set, col_set, index_set;
-  struct sudoku_board *board;
-  struct sudoku_cell *from_cell;
-  int result;
-
-  result = 0;
-  board = cell->board_ref;
-  from_cell = cell; // We are looking at other cells form the perspective of this cell (from_cell)
-
-  // Loop over all empty cells on the same row as cell but not the tile of the cell itself
-  row = from_cell->row;
-  col_set = board->row_cell_empty_set[row] & ~(col_to_tile_mask[cell->col]);
-  while (col_set) {
-    col = get_next_index_from_set(&col_set);
-    cell = &board->cells[row][col];
-    if (cell->number == 0)
-      result += func(cell, from_cell);
-  }
-
-  // Loop over all empty cells on the same col as cell but not the tile of the cell itself
-  col = from_cell->col;
-  row_set = board->col_cell_empty_set[col] & ~(row_to_tile_mask[cell->row]);
-  while (row_set) {
-    row = get_next_index_from_set(&row_set);
-    cell = &board->cells[row][col];
-    if (cell->number == 0)
-      result += func(cell, from_cell);
-  }
-
-  // Loop over all empty cells in the same tile as cell but not cell itself
-  tile = from_cell->tile;
-  index_set = board->tile_cell_empty_set[tile] & ~(INDEX_TO_SET(from_cell->index_in_tile));
-  while (index_set) {
-    index = get_next_index_from_set(&index_set);
-    cell = board->tile_ref[tile][index];
-    if (cell->number == 0)
-      result += func(cell, from_cell);
-  }
-
-  return result;
-}
-
-
-static inline
-int for_each_dependent_empty_from_cell(struct sudoku_cell *cell,
-                                       int (*func)(struct sudoku_cell *cell, struct sudoku_cell *from_cell))
-{
-  unsigned row, col, tile, index, row_set, col_set, index_set;
-  struct sudoku_board *board;
-  struct sudoku_cell *next_cell;
-  int result;
-
-  result = 0;
-  board = cell->board_ref;
-
-  // Loop over all empty cells on the same row as cell but not the tile of the cell itself
-  row = cell->row;
-  col_set = board->row_cell_empty_set[row] & ~(col_to_tile_mask[cell->col]);
-  while (col_set) {
-    col = get_next_index_from_set(&col_set);
-    next_cell = &board->cells[row][col];
-    if (next_cell->number == 0)
-      result += func(next_cell, cell);
-  }
-
-  // Loop over all empty cells in the same col as cell but not the tile of the cell itself
-  col = cell->col;
-  row_set = board->col_cell_empty_set[col] & ~(row_to_tile_mask[cell->row]);
-  while (row_set) {
-    row = get_next_index_from_set(&row_set);
-    next_cell = &board->cells[row][col];
-    if (next_cell->number == 0)
-      result += func(next_cell, cell);
-  }
-
-  // Loop over all empty cells in the same tile as cell but not cell itself
-  tile = cell->tile;
-  index_set = board->tile_cell_empty_set[tile] & ~(INDEX_TO_SET(cell->index_in_tile));
-  while (index_set) {
-    index = get_next_index_from_set(&index_set);
-    next_cell = board->tile_ref[tile][index];
-    if (next_cell->number == 0)
-      result += func(next_cell, cell);
-  }
-
-  return result;
-}
-
-
 static
 int solve_possible(struct sudoku_board *board)
 {
@@ -1412,7 +1282,7 @@ int find_and_reserve_group_with_index(struct sudoku_cell *cell,
                                       unsigned int prior_possible_number_set[9], int this_index, 
                                       unsigned int possible_number_set, 
                                       reserve_with_index_set_func_t reserve_with_index_set_func,
-                                      char *parent_func_name)
+                                      const char *parent_func_name)
 {
   int i, j, changed, possibilities, same_number_set_count;
   unsigned int possible_index_set, joint_number_set;
