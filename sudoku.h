@@ -22,14 +22,20 @@
 
 #define MAX_CLUE_LIMIT     77 
 #define MAX_SOLUTIONS       1 // 0 = Inifinte
+#define GUESSING_ALLOWED_DEFAULT  1
 
 
 // Macros
 
-#define SET_MASK (0x3FE)
+#define INDEX_SET_MASK  (0x1FF) // Bit 0 to 8 set to 1
+#define NUMBER_SET_MASK (0x3FE) // Bit 1 to 9 set to 1
+#define IS_VALID_INDEX(index) (((index)>=0) && ((index)<=8))
+#define IS_VALID_NUMBER(number) (((number)>=1) && ((number)<=9))
+#define IS_VALID_INDEX_SET(index_set) ((((index_set) & ~INDEX_SET_MASK) == 0) && ((index_set)!=0))
+#define IS_VALID_NUMBER_SET(number_set) ((((number_set) & ~NUMBER_SET_MASK) == 0) && ((number_set)!=0))
 #define NUMBER_TO_SET(number) (1 << (number)) 
-#define INDEX_TO_SET(number) (1 << (number)) 
-#define TAKEN_TO_AVAIL_SET(taken) ((~(taken)) & SET_MASK)
+#define INDEX_TO_SET(index) (1 << (index)) 
+#define NUMBER_TAKEN_TO_AVAILABLE_SET(number_taken_set) ((~(number_taken_set)) & NUMBER_SET_MASK)
 
 #define SET_ADD(s1, s2)              ((s1) | (s2))  // Add s1 and s2 (s1+s2)
 #define SET_SUB(s1, s2)              ((s1) & (~(s2)))  // Subtract s2 from s1 (s1-s2)
@@ -52,21 +58,35 @@ struct sudoku_cell {
   unsigned int row;
   unsigned int col;
   unsigned int tile;
+  unsigned int index_in_tile;
   unsigned int number;
   unsigned int reserved_for_number_set;
-  unsigned int *row_taken_set_ref;
-  unsigned int *col_taken_set_ref;
-  unsigned int *tile_taken_set_ref;
+  unsigned int *row_number_taken_set_ref;
+  unsigned int *col_number_taken_set_ref;
+  unsigned int *tile_number_taken_set_ref;
+  unsigned int *row_cell_empty_set_ref;
+  unsigned int *col_cell_empty_set_ref;
+  unsigned int *tile_cell_empty_set_ref;
 };
 
 struct sudoku_board {
   struct sudoku_cell cells[9][9];
   struct sudoku_cell *tile_ref[9][9];
-  unsigned int row_taken_set[9];
-  unsigned int col_taken_set[9];
-  unsigned int tile_taken_set[9];
+  unsigned int row_number_taken_set[9]; // Bitset represeting the numbers in use (taken) in a specific row (b0 not used, b1=1, b2=2, ...)
+  unsigned int col_number_taken_set[9];
+  unsigned int tile_number_taken_set[9];
+  unsigned int row_cell_empty_set[9]; // Bitset representing the cells without a number (empty) in a row (b0=col0, b1=col1, ...)
+  unsigned int col_cell_empty_set[9];
+  unsigned int tile_cell_empty_set[9];
+  unsigned int row_empty_set; // Bitset represeting the rows with empty cells in them (b0=row0, b1=row1, ...)
+  unsigned int col_empty_set;
+  unsigned int tile_empty_set;
+  unsigned int row_dirty_set; // Bitset represeting the rows with dirty cells in them (b0=row0, b1=row1, ...)
+  unsigned int col_dirty_set;
+  unsigned int tile_dirty_set;
   unsigned int undetermined_count;
   int dead;
+  int guessing_allowed;
   unsigned int solutions_count;
   struct sudoku_board *solutions_list;
   struct sudoku_board *next;

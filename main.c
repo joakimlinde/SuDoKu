@@ -29,6 +29,7 @@
 struct options {
   int verbose_level;
   int quiet_mode;
+  int guessing_allowed;
   int pretty_print; 
   int print_latex;
   int print_help;
@@ -62,6 +63,7 @@ int run_from_file(const char *file_name, struct options *options)
 
   board = create_board();
   board->debug_level = options->verbose_level;
+  board->guessing_allowed = options->guessing_allowed;
   read_board(board, input_str);
 
   if (options->verbose_level) {
@@ -70,11 +72,15 @@ int run_from_file(const char *file_name, struct options *options)
     if (options->print_latex) 
       print_board_latex(board);
     printf("---Solve---\n");
+    if (!options->guessing_allowed) 
+      printf("Guessing not allowed\n");
   }
-  
+
   solutions_count = solve(board);
   
   if (options->verbose_level) {
+    if (!options->guessing_allowed) 
+      printf("Guessing not allowed\n");
     if (solutions_count)
       printf("Found %i solution(s)\n", solutions_count);
     else
@@ -125,6 +131,7 @@ int run_stdio(struct options *options)
   read_board(board, buffer);
 
   board->debug_level = options->verbose_level;
+  board->guessing_allowed = options->guessing_allowed;
   if (options->verbose_level) {
     printf("-------- Input --------\n");
     print_board(board);
@@ -188,23 +195,28 @@ int run_batch_from_file(struct options *options)
       read_board(board, line);
       
       board->debug_level = options->verbose_level;
+      board->guessing_allowed = options->guessing_allowed;
       if (options->verbose_level) {
         printf("-------- Input --------\n");
         print_board(board);
         if (options->print_latex) 
           print_board_latex(board);
         printf("--- Solve---\n");
+        if (!options->guessing_allowed) 
+          printf("Guessing not allowed\n");
       }
 
       solutions_count = solve(board);
       
+      if (options->verbose_level && !options->guessing_allowed) 
+        printf("Guessing not allowed\n");
       if (solutions_count){     
         if (options->verbose_level)
           printf("Found %i solution(s)\n", solutions_count);
         total_solved++;
       } else {
         if (options->verbose_level)
-          printf("No solution found\n");
+          printf("No solution found\n"); 
         total_unsolved++;
       }
 
@@ -258,6 +270,7 @@ int parse_argument(int argc, char **argv, struct options *options)
   status = 0;
   options->verbose_level = 0;
   options->quiet_mode = 0;
+  options->guessing_allowed = 1;
   options->pretty_print = 0;
   options->print_latex = 0;
   options->print_help = 0;
@@ -266,7 +279,7 @@ int parse_argument(int argc, char **argv, struct options *options)
   options->output_file_name = NULL;
 
   opterr = 0;
-  while ((c = getopt(argc, argv, "vqd:xho:f:pt")) != -1) {
+  while ((c = getopt(argc, argv, "vqnd:xho:f:pt")) != -1) {
     switch (c) {
       case 'v':
         options->verbose_level = 1;
@@ -274,6 +287,10 @@ int parse_argument(int argc, char **argv, struct options *options)
 
       case 'q':
         options->quiet_mode = 1;
+        break;
+
+      case 'n':
+        options->guessing_allowed = 0;
         break;
 
       case 'd':
@@ -348,6 +365,7 @@ int parse_argument(int argc, char **argv, struct options *options)
     printf("  -h    Help\n");
     printf("  -v    Verbose\n");
     printf("  -q    Quiet mode\n");
+    printf("  -n    No guessing allowed - just use pure logic to solve\n");
     printf("  -a    Find all solutions not just the first\n");
     printf("  -f <filename>  Input file with one Sudoku per line\n");
     printf("  -o <filename>  Output file with one Sudoku per line\n");

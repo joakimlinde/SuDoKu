@@ -54,24 +54,40 @@ void init_board(struct sudoku_board *board)
       cell->row = row;
       cell->col = col;
       cell->tile =rowcol_to_tile[row][col];
+      cell->index_in_tile = tile_ref_next_free_idx[cell->tile]++;
       cell->number = 0;
       cell->reserved_for_number_set = 0;
-      cell->row_taken_set_ref = &board->row_taken_set[row];
-      cell->col_taken_set_ref = &board->col_taken_set[col];
-      cell->tile_taken_set_ref = &board->tile_taken_set[rowcol_to_tile[row][col]];
+      cell->row_number_taken_set_ref = &board->row_number_taken_set[row];
+      cell->col_number_taken_set_ref = &board->col_number_taken_set[col];
+      cell->tile_number_taken_set_ref = &board->tile_number_taken_set[rowcol_to_tile[row][col]];
+      cell->row_cell_empty_set_ref = &board->row_cell_empty_set[row];
+      cell->col_cell_empty_set_ref = &board->col_cell_empty_set[col];
+      cell->tile_cell_empty_set_ref = &board->tile_cell_empty_set[rowcol_to_tile[row][col]];
 
-      board->tile_ref[cell->tile][tile_ref_next_free_idx[cell->tile]++] = cell;
+      board->tile_ref[cell->tile][cell->index_in_tile] = cell;
     }
   }
 
   for (i=0; i<9; i++) {
-    board->row_taken_set[i] = 0;
-    board->col_taken_set[i] = 0;
-    board->tile_taken_set[i] = 0;
+    board->row_number_taken_set[i] = 0;
+    board->col_number_taken_set[i] = 0;
+    board->tile_number_taken_set[i] = 0;
+    board->row_cell_empty_set[i] = INDEX_SET_MASK;
+    board->col_cell_empty_set[i] = INDEX_SET_MASK;
+    board->tile_cell_empty_set[i] = INDEX_SET_MASK;
   }
+
+  board->row_empty_set = INDEX_SET_MASK;
+  board->col_empty_set = INDEX_SET_MASK;
+  board->tile_empty_set = INDEX_SET_MASK;
+
+  board->row_dirty_set = INDEX_SET_MASK;
+  board->col_dirty_set = INDEX_SET_MASK;
+  board->tile_dirty_set = INDEX_SET_MASK;
 
   board->undetermined_count = (9*9);
   board->dead = 0;
+  board->guessing_allowed = GUESSING_ALLOWED_DEFAULT;
   board->solutions_count = 0;
   board->solutions_list = NULL;
   board->next = NULL;
@@ -98,24 +114,40 @@ void init_board_from_orig(struct sudoku_board *board, struct sudoku_board *orig_
       cell->row = row;
       cell->col = col;
       cell->tile =rowcol_to_tile[row][col];
+      cell->index_in_tile = tile_ref_next_free_idx[cell->tile]++;
       cell->number = orig_cell->number;
       cell->reserved_for_number_set = orig_cell->reserved_for_number_set;
-      cell->row_taken_set_ref = &board->row_taken_set[row];
-      cell->col_taken_set_ref = &board->col_taken_set[col];
-      cell->tile_taken_set_ref = &board->tile_taken_set[rowcol_to_tile[row][col]];
+      cell->row_number_taken_set_ref = &board->row_number_taken_set[row];
+      cell->col_number_taken_set_ref = &board->col_number_taken_set[col];
+      cell->tile_number_taken_set_ref = &board->tile_number_taken_set[rowcol_to_tile[row][col]];
+      cell->row_cell_empty_set_ref = &board->row_cell_empty_set[row];
+      cell->col_cell_empty_set_ref = &board->col_cell_empty_set[col];
+      cell->tile_cell_empty_set_ref = &board->tile_cell_empty_set[rowcol_to_tile[row][col]];
 
-      board->tile_ref[cell->tile][tile_ref_next_free_idx[cell->tile]++] = cell;
+      board->tile_ref[cell->tile][cell->index_in_tile] = cell;
     }
   }
 
   for (i=0; i<9; i++) {
-    board->row_taken_set[i] = orig_board->row_taken_set[i];
-    board->col_taken_set[i] = orig_board->col_taken_set[i];
-    board->tile_taken_set[i] = orig_board->tile_taken_set[i];
+    board->row_number_taken_set[i] = orig_board->row_number_taken_set[i];
+    board->col_number_taken_set[i] = orig_board->col_number_taken_set[i];
+    board->tile_number_taken_set[i] = orig_board->tile_number_taken_set[i];
+    board->row_cell_empty_set[i] = orig_board->row_cell_empty_set[i];
+    board->col_cell_empty_set[i] = orig_board->col_cell_empty_set[i];
+    board->tile_cell_empty_set[i] = orig_board->tile_cell_empty_set[i];
   }
+
+  board->row_empty_set = orig_board->row_empty_set;
+  board->col_empty_set = orig_board->col_empty_set;
+  board->tile_empty_set = orig_board->tile_empty_set;
+
+  board->row_dirty_set = orig_board->row_dirty_set;
+  board->col_dirty_set = orig_board->col_dirty_set;
+  board->tile_dirty_set = orig_board->tile_dirty_set;
 
   board->undetermined_count = orig_board->undetermined_count;
   board->dead = orig_board->dead;
+  board->guessing_allowed = orig_board->guessing_allowed;
   board->solutions_count = 0;
   board->solutions_list = NULL;
   board->next = NULL;
@@ -140,13 +172,25 @@ void copy_board(struct sudoku_board *src, struct sudoku_board *dest)
   }
 
   for (i=0; i<9; i++) {
-    dest->row_taken_set[i] = src->row_taken_set[i];
-    dest->col_taken_set[i] = src->col_taken_set[i];
-    dest->tile_taken_set[i] = src->tile_taken_set[i];
+    dest->row_number_taken_set[i] = src->row_number_taken_set[i];
+    dest->col_number_taken_set[i] = src->col_number_taken_set[i];
+    dest->tile_number_taken_set[i] = src->tile_number_taken_set[i];
+    dest->row_cell_empty_set[i] = src->row_cell_empty_set[i];
+    dest->col_cell_empty_set[i] = src->col_cell_empty_set[i];
+    dest->tile_cell_empty_set[i] = src->tile_cell_empty_set[i];
   }
+
+  dest->row_empty_set = src->row_empty_set;
+  dest->col_empty_set = src->col_empty_set;
+  dest->tile_empty_set = src->tile_empty_set;
+
+  dest->row_dirty_set = src->row_dirty_set;
+  dest->col_dirty_set = src->col_dirty_set;
+  dest->tile_dirty_set = src->tile_dirty_set;
 
   dest->undetermined_count = src->undetermined_count;
   dest->dead = src->dead;
+  dest->guessing_allowed = src->guessing_allowed;
   dest->nest_level = src->nest_level;
   dest->debug_level = src->debug_level;
 }
